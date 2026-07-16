@@ -20,7 +20,7 @@ import type { FeatureLike } from 'ol/Feature';
 import type { StyleFunction } from 'ol/style/Style';
 
 import { NavbarComponent } from '../../shared/navbar/navbar.component';
-import { ApiService, CrsInfo, LayerMeta } from '../../core/api.service';
+import { ApiService, CrsInfo, LayerMeta, PublishInfo } from '../../core/api.service';
 import { DISPLAY_CRS, registerProjections } from '../../core/projections';
 
 interface LegendEntry { min: number; max: number; color: string; }
@@ -69,6 +69,10 @@ export class MapComponent implements AfterViewInit, OnDestroy {
 
   // Popup d'attributs
   popupProps: Record<string, unknown> | null = null;
+
+  // Publication QGIS
+  publishInfo: PublishInfo | null = null;
+  publishing = false;
 
   // Outil de conversion ponctuelle
   tp = { x: 0, y: 0, from: 4326, to: 2154 };
@@ -227,6 +231,40 @@ export class MapComponent implements AfterViewInit, OnDestroy {
       this.loadLayers();
     });
   }
+
+  // ── Publication QGIS (OGC API – Features) ──────────────────────────────────
+  publish(layer: LayerMeta, ev: Event): void {
+    ev.stopPropagation();
+    this.publishing = true; this.error = ''; this.message = '';
+    this.api.publishLayer(layer.id).subscribe({
+      next: (info) => {
+        this.publishing = false;
+        this.publishInfo = info;
+        this.message = `Couche « ${layer.name} » publiée pour QGIS.`;
+        this.loadLayers();
+      },
+      error: (e) => { this.publishing = false; this.error = e?.error?.detail ?? 'Échec de la publication.'; },
+    });
+  }
+
+  showPublishInfo(layer: LayerMeta, ev: Event): void {
+    ev.stopPropagation();
+    this.api.getPublishInfo(layer.id).subscribe((info) => (this.publishInfo = info));
+  }
+
+  unpublish(layer: LayerMeta, ev: Event): void {
+    ev.stopPropagation();
+    if (!confirm(`Dépublier « ${layer.name} » (la table QGIS sera supprimée) ?`)) return;
+    this.api.unpublishLayer(layer.id).subscribe(() => {
+      this.publishInfo = null;
+      this.message = `« ${layer.name} » dépubliée.`;
+      this.loadLayers();
+    });
+  }
+
+  closePublishInfo(): void { this.publishInfo = null; }
+
+  copy(text: string): void { navigator.clipboard?.writeText(text); }
 
   // ── CRS d'affichage ────────────────────────────────────────────────────────
   changeDisplayCrs(srid: number | string): void {

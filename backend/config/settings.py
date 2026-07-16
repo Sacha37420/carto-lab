@@ -85,6 +85,15 @@ METEOFRANCE_BASE_URL = config(
     default='https://public-api.meteofrance.fr/public/DPClim/v1',
 )
 
+# ── Publication OGC API – Features / QGIS (Lot 4) ──────────────────────────────
+# Schéma dédié aux couches publiables + rôle Postgres read-only strictement scopé.
+CARTO_PUBLIC_SCHEMA = 'carto_public'
+CARTO_READER_USER = config('CARTO_READER_USER', default='carto_reader')
+CARTO_READER_PASSWORD = config('CARTO_READER_PASSWORD', default='')
+# Chemin Caddy du service pg_featureserv (derrière oauth2-proxy) et URL publique.
+OGC_SERVICE_PATH = config('OGC_SERVICE_PATH', default='carto-ogc')
+DOMAIN = config('DOMAIN', default='')
+
 # ── Limites d'upload (sécurité — cf. to_do « Uploads : valider strictement ») ──
 MAX_UPLOAD_BYTES = config('MAX_UPLOAD_BYTES', default=104857600, cast=int)  # 100 Mo
 DATA_UPLOAD_MAX_MEMORY_SIZE = MAX_UPLOAD_BYTES

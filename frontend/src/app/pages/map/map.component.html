@@ -32,6 +32,14 @@
             <span class="tag">EPSG:{{ l.srid_source || '?' }}</span>
             <span class="tag">{{ l.geom_type || '—' }}</span>
             <span class="tag">{{ l.feature_count }} ent.</span>
+            <span class="tag qgis" *ngIf="l.published_qgis">QGIS</span>
+          </div>
+          <div class="pub-actions" *ngIf="l.layer_type === 'vector'">
+            <button *ngIf="!l.published_qgis" (click)="publish(l, $event)" [disabled]="publishing">
+              Publier vers QGIS
+            </button>
+            <button *ngIf="l.published_qgis" (click)="showPublishInfo(l, $event)">Infos QGIS</button>
+            <button *ngIf="l.published_qgis" class="unpub" (click)="unpublish(l, $event)">Dépublier</button>
           </div>
           <button class="del" (click)="deleteLayer(l, $event)" title="Supprimer">✕</button>
         </li>
@@ -85,6 +93,42 @@
         </div>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- ── Infos de connexion QGIS (OGC API – Features) ────────────────────── -->
+<div class="modal-backdrop" *ngIf="publishInfo" (click)="closePublishInfo()">
+  <div class="modal" (click)="$event.stopPropagation()">
+    <button class="close" (click)="closePublishInfo()">✕</button>
+    <h3>Accès QGIS — OGC API – Features</h3>
+
+    <p class="note">
+      Le service est protégé par le SSO du lab (oauth2-proxy + groupe). Aucun port
+      PostGIS n'est exposé : QGIS lit la couche matérialisée en lecture seule.
+    </p>
+
+    <label>URL du service</label>
+    <div class="copy-row">
+      <code>{{ publishInfo.ogc_url }}</code>
+      <button (click)="copy(publishInfo.ogc_url || '')">Copier</button>
+    </div>
+
+    <label>Collection</label>
+    <div class="copy-row">
+      <code>{{ publishInfo.collection }}</code>
+      <button (click)="copy(publishInfo.collection || '')">Copier</button>
+    </div>
+
+    <label>URL des entités (items)</label>
+    <div class="copy-row">
+      <code>{{ publishInfo.items_url }}</code>
+      <button (click)="copy(publishInfo.items_url || '')">Copier</button>
+    </div>
+
+    <label>Marche à suivre</label>
+    <ol class="steps">
+      <li *ngFor="let s of publishInfo.qgis_steps">{{ s }}</li>
+    </ol>
   </div>
 </div>
 

@@ -108,3 +108,74 @@ services:
       caddy: "${DOMAIN}"
       caddy.handle_path: "/carto-lab/*"
       caddy.handle_path.reverse_proxy: "{{upstreams 80}}"
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # pg_featureserv — OGC API – Features (lecture seule par nature) sur le schéma
+  # carto_public UNIQUEMENT. Se connecte avec le rôle Postgres read-only scopé :
+  # il ne voit donc jamais les tables applicatives de carto_lab.
+  # AUCUN port publié : accessible uniquement au travers d'oauth2-proxy.
+  # (Le port PostGIS n'est jamais exposé — cf. CLAUDE.md / to_do point 5.)
+  # ──────────────────────────────────────────────────────────────────────────
+  pgfeatureserv:
+    image: pramsey/pg_featureserv:latest
+    container_name: carto-lab-pgfs
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: "postgres://${CARTO_READER_USER:-carto_reader}:${CARTO_READER_PASSWORD}@db:5432/${DB_NAME:-cartodb}"
+      # URL publique externe → liens HATEOAS corrects derrière Caddy + oauth2-proxy.
+      PGFS_SERVER_URLBASE: "https://${DOMAIN}/${OGC_SERVICE_PATH:-carto-ogc}"
+      PGFS_PAGING_LIMITDEFAULT: "1000"
+      PGFS_PAGING_LIMITMAX: "50000"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - carto-net
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # oauth2-proxy devant pg_featureserv — même cloisonnement que code-server :
+  # session OIDC Keycloak + restriction par groupe (OAUTH2_PROXY_ALLOWED_GROUPS).
+  # Client Keycloak 'carto-ogc' créé par : bash carto-lab/setup-ogc-auth.sh
+  # ──────────────────────────────────────────────────────────────────────────
+  oauth2-proxy-ogc:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.6.0
+    container_name: carto-lab-oauth2-ogc
+    restart: unless-stopped
+    environment:
+      OAUTH2_PROXY_PROVIDER: keycloak-oidc
+      OAUTH2_PROXY_OIDC_ISSUER_URL: "${KEYCLOAK_PUBLIC_URL}/realms/${KEYCLOAK_REALM:-ssolab}"
+      OAUTH2_PROXY_CLIENT_ID: carto-ogc
+      OAUTH2_PROXY_CLIENT_SECRET: "${CARTO_OGC_CLIENT_SECRET}"
+      OAUTH2_PROXY_HTTP_ADDRESS: "0.0.0.0:4180"
+      OAUTH2_PROXY_REDIRECT_URL: "https://${DOMAIN}/${OGC_SERVICE_PATH:-carto-ogc}/oauth2/callback"
+      OAUTH2_PROXY_COOKIE_SECRET: "${CARTO_OGC_COOKIE_SECRET}"
+      OAUTH2_PROXY_COOKIE_SECURE: "true"
+      OAUTH2_PROXY_COOKIE_SAMESITE: "lax"
+      OAUTH2_PROXY_COOKIE_NAME: "_oauth2_proxy_ogc"
+      OAUTH2_PROXY_EMAIL_DOMAINS: "*"
+      # Cloisonnement : mêmes groupes que l'app (verrou en amont, comme code-server).
+      OAUTH2_PROXY_ALLOWED_GROUPS: "${KEYCLOAK_REQUIRED_GROUPS:-developers}"
+      OAUTH2_PROXY_SCOPE: "openid email profile"
+      OAUTH2_PROXY_INSECURE_OIDC_ALLOW_UNVERIFIED_EMAIL: "true"
+      OAUTH2_PROXY_SKIP_PROVIDER_BUTTON: "true"
+      OAUTH2_PROXY_REVERSE_PROXY: "true"
+      # ── Accès QGIS ────────────────────────────────────────────────────────
+      # QGIS n'a pas de cookie de session : il présente un Bearer token OAuth2.
+      # Sans ces deux réglages, oauth2-proxy le redirigerait vers la page de login
+      # HTML et QGIS échouerait. Ici, un JWT valide du realm (audience carto-ogc)
+      # est accepté directement.
+      OAUTH2_PROXY_SKIP_JWT_BEARER_TOKENS: "true"
+      OAUTH2_PROXY_EXTRA_JWT_ISSUERS: "${KEYCLOAK_PUBLIC_URL}/realms/${KEYCLOAK_REALM:-ssolab}=carto-ogc"
+    command:
+      - oauth2-proxy
+      - --upstream=http://carto-lab-pgfs:9000/
+    depends_on:
+      - pgfeatureserv
+    networks:
+      - sso-net
+      - carto-net
+    labels:
+      caddy: "${DOMAIN}"
+      caddy.handle_path: "/${OGC_SERVICE_PATH:-carto-ogc}/*"
+      caddy.handle_path.reverse_proxy: "{{upstreams 4180}}"
+      caddy.handle_path.reverse_proxy.header_down: "Location ^/$ /${OGC_SERVICE_PATH:-carto-ogc}/"

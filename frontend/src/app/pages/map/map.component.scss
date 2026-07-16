@@ -89,6 +89,96 @@
     background: transparent; color: #94a3b8;
     &:hover { color: #dc2626; background: transparent; }
   }
+
+  .tag.qgis { background: #dcfce7; color: #166534; font-weight: 700; }
+
+  .pub-actions {
+    display: flex;
+    gap: .3rem;
+    margin-top: .4rem;
+    button {
+      flex: 1;
+      width: auto;
+      margin: 0;
+      padding: .2rem .3rem;
+      font-size: .68rem;
+      background: #0f766e;
+      &:hover:not(:disabled) { background: #115e59; }
+      &.unpub { background: #64748b; &:hover { background: #475569; } }
+    }
+  }
+}
+
+// ── Modal infos QGIS ────────────────────────────────────────────────────────
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, .55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+
+.modal {
+  position: relative;
+  background: #fff;
+  border-radius: 12px;
+  padding: 1.2rem 1.4rem;
+  width: min(640px, 92vw);
+  max-height: 86vh;
+  overflow: auto;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, .3);
+
+  h3 { margin: 0 0 .5rem; color: #1e293b; }
+  .note { font-size: .8rem; color: #64748b; margin: 0 0 1rem; }
+
+  label {
+    display: block;
+    font-size: .75rem;
+    font-weight: 700;
+    color: #475569;
+    margin: .8rem 0 .25rem;
+  }
+
+  .close {
+    position: absolute;
+    top: .5rem; right: .6rem;
+    border: none; background: transparent;
+    font-size: 1rem; color: #64748b; cursor: pointer;
+    &:hover { color: #0f172a; }
+  }
+
+  .copy-row {
+    display: flex;
+    gap: .4rem;
+    align-items: center;
+    code {
+      flex: 1;
+      background: #f1f5f9;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: .35rem .5rem;
+      font-size: .76rem;
+      overflow-x: auto;
+      white-space: nowrap;
+    }
+    button {
+      padding: .3rem .6rem;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      background: #fff;
+      cursor: pointer;
+      font-size: .72rem;
+      &:hover { background: #eff6ff; border-color: #2563eb; color: #2563eb; }
+    }
+  }
+
+  .steps {
+    margin: .3rem 0 0;
+    padding-left: 1.2rem;
+    li { font-size: .8rem; color: #334155; padding: .2rem 0; }
+  }
 }
 
 .map-wrap { flex: 1; position: relative; }

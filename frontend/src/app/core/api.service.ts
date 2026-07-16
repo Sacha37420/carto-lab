@@ -87,6 +87,16 @@ export interface Job {
   updated_at: string;
 }
 
+export interface PublishInfo {
+  published: boolean;
+  service_type?: string;
+  ogc_url?: string;
+  collections_url?: string;
+  collection?: string;
+  items_url?: string;
+  qgis_steps?: string[];
+}
+
 export interface MeteoJobRequest {
   grandeur: string;
   year: number;
@@ -203,5 +213,18 @@ export class ApiService {
 
   getJob(id: number): Observable<Job> {
     return this.http.get<Job>(`${this.base}/api/jobs/${id}/`);
+  }
+
+  // ── Publication OGC API – Features / QGIS (Lot 4) ────────────────────────
+  publishLayer(id: number): Observable<PublishInfo> {
+    return this.http.post<PublishInfo>(`${this.base}/api/layers/${id}/publish/`, {});
+  }
+
+  getPublishInfo(id: number): Observable<PublishInfo> {
+    return this.http.get<PublishInfo>(`${this.base}/api/layers/${id}/publish/`);
+  }
+
+  unpublishLayer(id: number): Observable<void> {
+    return this.http.delete<void>(`${this.base}/api/layers/${id}/publish/`);
   }
 }

@@ -20,6 +20,7 @@ from . import processing
 from . import indicators as ind_mod
 from . import choropleth as choro_mod
 from . import secret_store
+from . import publish as publish_mod
 from .tasks import build_meteo_choropleth
 
 
@@ -438,3 +439,47 @@ class JobDetailView(APIView):
             return Response(JobSerializer(Job.objects.get(pk=pk)).data)
         except Job.DoesNotExist:
             return Response(status=status.HTTP_404_NOT_FOUND)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# PUBLICATION OGC API – Features / QGIS (Lot 4)
+# ──────────────────────────────────────────────────────────────────────────────
+class LayerPublishView(APIView):
+    """
+    POST   /api/layers/<id>/publish/  — matérialise la couche dans carto_public
+                                        (exposée par pg_featureserv) et renvoie les
+                                        infos de connexion QGIS.
+    GET    /api/layers/<id>/publish/  — infos de connexion si déjà publiée.
+    DELETE /api/layers/<id>/publish/  — dépublie (supprime la table matérialisée).
+    """
+
+    def _layer(self, pk):
+        try:
+            return Layer.objects.get(pk=pk)
+        except Layer.DoesNotExist:
+            return None
+
+    def get(self, request, pk):
+        layer = self._layer(pk)
+        if layer is None:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        if not layer.published_qgis:
+            return Response({'published': False})
+        return Response(publish_mod.connection_info(layer))
+
+    def post(self, request, pk):
+        layer = self._layer(pk)
+        if layer is None:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        try:
+            info = publish_mod.publish_layer(layer)
+        except publish_mod.PublishError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(info, status=status.HTTP_201_CREATED)
+
+    def delete(self, request, pk):
+        layer = self._layer(pk)
+        if layer is None:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        publish_mod.unpublish_layer(layer)
+        return Response(status=status.HTTP_204_NO_CONTENT)

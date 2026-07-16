@@ -6,6 +6,7 @@ from .views import (
     ProcessingCatalogView, ProcessingRunView,
     RecipesView, RecipeDetailView, RecipeRunView,
     MeteoOptionsView, MeteoJobLaunchView, JobsView, JobDetailView,
+    LayerPublishView,
 )
 
 urlpatterns = [
@@ -17,6 +18,7 @@ urlpatterns = [
     path('layers/',                 LayersView.as_view()),
     path('layers/<int:pk>/',        LayerDetailView.as_view()),
     path('layers/<int:pk>/geojson/', LayerGeoJSONView.as_view()),
+    path('layers/<int:pk>/publish/', LayerPublishView.as_view()),
 
     # ── Systèmes de coordonnées (Feature 2) ──────────────────────────────────
     path('crs/',                    CRSListView.as_view()),
