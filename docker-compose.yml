@@ -1,0 +1,80 @@
+version: "3.9"
+
+# NOTE IMPORTANT (environnement de ce lab) : le démon Docker ne partage PAS le
+# système de fichiers de l'hôte — les bind mounts (./src:/app) ne reflètent rien.
+# Tout le code et la config sont donc BAKÉS dans les images (COPY dans les
+# Dockerfiles) ; on n'utilise que des volumes NOMMÉS (gérés par le démon).
+# Conséquence : toute modif de code nécessite un rebuild (recompose_docker --force).
+
+networks:
+  sso-net:
+    external: true
+    name: sso-lab_sso-net
+  dev-net:
+    external: true
+    name: dev-net
+  carto-net:
+    # Réseau interne privé backend <-> PostGIS. Le port PostgreSQL n'est JAMAIS
+    # publié (cf. CLAUDE.md / to_do point 5) : l'accès QGIS passera par
+    # pg_featureserv derrière Caddy + oauth2-proxy, pas par un port DB brut.
+    driver: bridge
+
+volumes:
+  carto-pgdata:
+  carto-media:
+
+services:
+
+  db:
+    image: postgis/postgis:16-3.4
+    container_name: carto-lab-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: "${DB_NAME:-cartodb}"
+      POSTGRES_USER: "${DB_USER:-cartouser}"
+      POSTGRES_PASSWORD: "${DB_PASSWORD}"
+    volumes:
+      - carto-pgdata:/var/lib/postgresql/data
+    networks:
+      - carto-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-cartouser} -d ${DB_NAME:-cartodb}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  backend:
+    build: ./backend
+    container_name: carto-lab-backend
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8091:8000"
+    networks:
+      - sso-net
+      - dev-net
+      - carto-net
+    volumes:
+      # Volume nommé : persistance des fichiers importés (rasters). Pas un bind mount.
+      - carto-media:/app/media
+    labels:
+      caddy: "${DOMAIN}"
+      caddy.handle_path: "/carto-lab-api/*"
+      caddy.handle_path.reverse_proxy: "{{upstreams 8000}}"
+
+  frontend:
+    build: ./frontend
+    container_name: carto-lab-frontend
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "4209:80"
+    networks:
+      - sso-net
+    labels:
+      caddy: "${DOMAIN}"
+      caddy.handle_path: "/carto-lab/*"
+      caddy.handle_path.reverse_proxy: "{{upstreams 80}}"

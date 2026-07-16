@@ -1,0 +1,82 @@
+<app-navbar></app-navbar>
+
+<div class="map-page">
+  <!-- ── Panneau latéral ─────────────────────────────────────────────── -->
+  <aside class="panel">
+    <section class="block">
+      <h3>Importer une couche</h3>
+      <input type="file" (change)="onFile($event)"
+             accept=".geojson,.json,.gpkg,.kml,.kmz,.gml,.zip,.csv,.tif,.tiff" />
+      <input type="text" placeholder="Nom de la couche" [(ngModel)]="uploadName" />
+      <input type="number" placeholder="CRS source (EPSG) — si absent du fichier"
+             [(ngModel)]="uploadSrid" />
+      <button (click)="upload()" [disabled]="!selectedFile || importing">
+        {{ importing ? 'Import en cours…' : 'Importer' }}
+      </button>
+      <p class="hint">Formats : GeoJSON, Shapefile (.zip), GeoPackage, KML/KMZ, GML, CSV (lat/lon), GeoTIFF.</p>
+      <p class="ok" *ngIf="message">{{ message }}</p>
+      <p class="err" *ngIf="error">{{ error }}</p>
+    </section>
+
+    <section class="block">
+      <h3>Couches ({{ layers.length }})</h3>
+      <ul class="layer-list">
+        <li *ngFor="let l of layers" [class.active]="isActive(l.id)">
+          <label>
+            <input type="checkbox" [checked]="isActive(l.id)" (change)="toggleLayer(l)"
+                   [disabled]="l.layer_type !== 'vector'" />
+            <span class="name">{{ l.name }}</span>
+          </label>
+          <div class="meta">
+            <span class="tag">{{ l.layer_type }}</span>
+            <span class="tag">EPSG:{{ l.srid_source || '?' }}</span>
+            <span class="tag">{{ l.geom_type || '—' }}</span>
+            <span class="tag">{{ l.feature_count }} ent.</span>
+          </div>
+          <button class="del" (click)="deleteLayer(l, $event)" title="Supprimer">✕</button>
+        </li>
+        <li *ngIf="!layers.length" class="empty">Aucune couche. Importez un fichier.</li>
+      </ul>
+    </section>
+
+    <section class="block">
+      <h3>CRS d'affichage</h3>
+      <select [ngModel]="displayCrs" (ngModelChange)="changeDisplayCrs($event)">
+        <option *ngFor="let c of displayCrsOptions" [value]="c.srid">{{ c.label }}</option>
+      </select>
+      <p class="hint" *ngIf="cursor">
+        Curseur : <strong>{{ cursor.x }}, {{ cursor.y }}</strong> (EPSG:{{ displayCrs }})
+      </p>
+    </section>
+
+    <section class="block">
+      <h3>Convertir un point</h3>
+      <div class="grid2">
+        <input type="number" placeholder="X / lon" [(ngModel)]="tp.x" />
+        <input type="number" placeholder="Y / lat" [(ngModel)]="tp.y" />
+        <input type="number" placeholder="De (EPSG)" [(ngModel)]="tp.from" />
+        <input type="number" placeholder="Vers (EPSG)" [(ngModel)]="tp.to" />
+      </div>
+      <button (click)="runTransform()">Convertir</button>
+      <p class="ok" *ngIf="tpResult">
+        → {{ tpResult.x | number:'1.0-6' }}, {{ tpResult.y | number:'1.0-6' }}
+        (EPSG:{{ tpResult.srid }})
+      </p>
+    </section>
+  </aside>
+
+  <!-- ── Carte ───────────────────────────────────────────────────────── -->
+  <div class="map-wrap">
+    <div #mapEl class="map"></div>
+  </div>
+</div>
+
+<!-- Popup d'attributs -->
+<div #popupEl class="ol-popup" [class.hidden]="!popupProps">
+  <button class="close" (click)="closePopup()">✕</button>
+  <table *ngIf="popupProps">
+    <tr *ngFor="let e of propEntries(popupProps)">
+      <th>{{ e.k }}</th><td>{{ e.v }}</td>
+    </tr>
+  </table>
+</div>
