@@ -66,6 +66,32 @@ class Feature(gis_models.Model):
         db_table = 'features'
 
 
+class Recipe(models.Model):
+    """
+    Recette / pipeline (constructeur de cartes — Feature 6).
+
+    `steps` = liste ordonnée d'étapes JSON :
+        {"op": "buffer", "params": {...}, "inputs": [ref, ...]}
+    où `ref` vaut {"layer": <id>} (couche existante) ou {"step": <index>}
+    (sortie d'une étape précédente). Rejouable via l'endpoint /recipes/<id>/run/.
+    """
+
+    name = models.CharField(max_length=200)
+    steps = models.JSONField(default=list)
+    owner_email = models.CharField(max_length=255, blank=True)
+    result_layer = models.ForeignKey(
+        'Layer', on_delete=models.SET_NULL, null=True, blank=True, related_name='+',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'recipes'
+        ordering = ['-created_at']
+
+    def __str__(self) -> str:
+        return self.name
+
+
 class Department(models.Model):
     """Département ou équipe de l'organisation."""
 

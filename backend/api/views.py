@@ -9,10 +9,13 @@ from rest_framework.response import Response
 from django.contrib.gis.geos import GEOSGeometry
 from drf_spectacular.utils import extend_schema, OpenApiParameter
 
-from .models import Department, Feature, Layer, UserRecord
-from .serializers import DepartmentSerializer, LayerSerializer, UserRecordSerializer
+from .models import Department, Feature, Layer, Recipe, UserRecord
+from .serializers import (
+    DepartmentSerializer, LayerSerializer, RecipeSerializer, UserRecordSerializer,
+)
 from . import crs as crs_mod
 from .geo import LayerImportError, import_layer
+from . import processing
 
 
 class MeView(APIView):
@@ -218,3 +221,137 @@ class TransformPointView(APIView):
                             status=status.HTTP_400_BAD_REQUEST)
         tx, ty = crs_mod.transform_point(x, y, from_srid, to_srid)
         return Response({'x': tx, 'y': ty, 'srid': to_srid})
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# MOTEUR DE CALCULS (Feature 3) + CONSTRUCTEUR / RECETTES (Feature 6)
+# ──────────────────────────────────────────────────────────────────────────────
+def _resolve_layers(ids):
+    """Charge des couches par id en préservant l'ordre ; lève si l'une manque."""
+    layers = []
+    for lid in ids:
+        try:
+            layers.append(Layer.objects.get(pk=lid))
+        except Layer.DoesNotExist:
+            raise processing.ProcessingError(f"Couche {lid} introuvable.")
+    return layers
+
+
+class ProcessingCatalogView(APIView):
+    """GET /api/processings/ — catalogue des traitements disponibles (+ schéma des params)."""
+
+    def get(self, request):
+        return Response(processing.catalog())
+
+
+class ProcessingRunView(APIView):
+    """
+    POST /api/processings/run/
+        { "operation": "buffer", "inputs": [<layer_id>, ...], "params": {...}, "name": "opt" }
+    Exécute un traitement unique → nouvelle couche (origine=calcul).
+    """
+
+    def post(self, request):
+        d = request.data
+        op = d.get('operation')
+        inputs = d.get('inputs') or []
+        params = d.get('params') or {}
+        try:
+            layers = _resolve_layers(inputs)
+            layer = processing.run_operation(
+                op, layers, params,
+                out_name=d.get('name', ''),
+                owner_email=getattr(request.user, 'email', ''),
+            )
+        except processing.ProcessingError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            LayerSerializer(layer, context={'request': request}).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+def _run_recipe(recipe: Recipe, owner_email: str) -> Layer:
+    """Exécute les étapes d'une recette dans l'ordre ; renvoie la couche finale."""
+    outputs: list[Layer] = []          # sortie de chaque étape (par index)
+    for i, step in enumerate(recipe.steps):
+        op = step.get('op')
+        params = step.get('params') or {}
+        refs = step.get('inputs') or []
+        inputs = []
+        for ref in refs:
+            if 'layer' in ref:
+                inputs.append(_resolve_layers([ref['layer']])[0])
+            elif 'step' in ref:
+                idx = ref['step']
+                if idx < 0 or idx >= len(outputs):
+                    raise processing.ProcessingError(
+                        f"Étape {i}: référence d'étape {idx} invalide."
+                    )
+                inputs.append(outputs[idx])
+            else:
+                raise processing.ProcessingError(f"Étape {i}: entrée mal formée {ref}.")
+        out = processing.run_operation(
+            op, inputs, params,
+            out_name=step.get('name', f"{recipe.name} — étape {i + 1}"),
+            owner_email=owner_email,
+        )
+        out.metadata = {**out.metadata, 'recipe': recipe.name, 'recipe_step': i}
+        out.save(update_fields=['metadata'])
+        outputs.append(out)
+    if not outputs:
+        raise processing.ProcessingError("Recette vide : aucune étape.")
+    return outputs[-1]
+
+
+class RecipesView(APIView):
+    """
+    GET  /api/recipes/  — liste des recettes.
+    POST /api/recipes/  — crée une recette ({ name, steps }).
+    """
+
+    def get(self, request):
+        return Response(RecipeSerializer(Recipe.objects.all(), many=True).data)
+
+    def post(self, request):
+        ser = RecipeSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        recipe = ser.save(owner_email=getattr(request.user, 'email', ''))
+        return Response(RecipeSerializer(recipe).data, status=status.HTTP_201_CREATED)
+
+
+class RecipeDetailView(APIView):
+    """GET / DELETE /api/recipes/<id>/."""
+
+    def get(self, request, pk):
+        try:
+            return Response(RecipeSerializer(Recipe.objects.get(pk=pk)).data)
+        except Recipe.DoesNotExist:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+
+    def delete(self, request, pk):
+        try:
+            Recipe.objects.get(pk=pk).delete()
+        except Recipe.DoesNotExist:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class RecipeRunView(APIView):
+    """POST /api/recipes/<id>/run/ — rejoue la recette → couche résultat."""
+
+    def post(self, request, pk):
+        try:
+            recipe = Recipe.objects.get(pk=pk)
+        except Recipe.DoesNotExist:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        try:
+            layer = _run_recipe(recipe, getattr(request.user, 'email', ''))
+        except processing.ProcessingError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        recipe.result_layer = layer
+        recipe.save(update_fields=['result_layer'])
+        return Response(
+            LayerSerializer(layer, context={'request': request}).data,
+            status=status.HTTP_201_CREATED,
+        )

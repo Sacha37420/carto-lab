@@ -1,0 +1,88 @@
+<app-navbar></app-navbar>
+
+<div class="proc-page">
+  <h2>Traitements géo/carto</h2>
+  <p class="lead">
+    Chaque traitement produit une nouvelle couche (visible dans la
+    <a routerLink="/map">carte</a>). Enchaînez-les en une recette rejouable.
+  </p>
+
+  <p class="ok" *ngIf="msg">{{ msg }}</p>
+  <p class="err" *ngIf="err">{{ err }}</p>
+
+  <div class="columns">
+    <!-- ── Composer une opération ─────────────────────────────────────── -->
+    <section class="card">
+      <h3>1. Opération</h3>
+      <label>Traitement</label>
+      <select [(ngModel)]="op" (ngModelChange)="onOpChange()">
+        <option [ngValue]="null" disabled>— choisir —</option>
+        <option *ngFor="let o of operations" [ngValue]="o">{{ o.label }}</option>
+      </select>
+      <p class="hint" *ngIf="op">{{ op.description }}</p>
+
+      <ng-container *ngIf="op">
+        <label *ngFor="let slot of inputSlots; let i = index">
+          Entrée {{ i + 1 }}
+          <select [(ngModel)]="inputSlots[i]">
+            <option value="" disabled>— couche / étape —</option>
+            <option *ngFor="let opt of inputOptions()" [value]="opt.value">{{ opt.label }}</option>
+          </select>
+        </label>
+
+        <ng-container *ngFor="let p of op.params">
+          <label>{{ p.label }}
+            <select *ngIf="p.options" [(ngModel)]="params[p.name]">
+              <option *ngFor="let o of p.options" [value]="o.value">{{ o.label }}</option>
+            </select>
+            <input *ngIf="!p.options"
+                   [type]="p.type === 'number' ? 'number' : 'text'"
+                   [(ngModel)]="params[p.name]" />
+          </label>
+        </ng-container>
+
+        <div class="actions">
+          <button (click)="runSingle()" [disabled]="running">Exécuter maintenant</button>
+          <button class="secondary" (click)="addStep()" [disabled]="running">Ajouter à la recette ↓</button>
+        </div>
+      </ng-container>
+    </section>
+
+    <!-- ── Recette en construction ────────────────────────────────────── -->
+    <section class="card">
+      <h3>2. Recette (pipeline)</h3>
+      <ol class="steps" *ngIf="draft.length; else noStep">
+        <li *ngFor="let s of draft; let i = index">
+          <span>{{ stepSummary(s) }}</span>
+          <button class="del" (click)="removeStep(i)" title="Tronquer ici">✕</button>
+        </li>
+      </ol>
+      <ng-template #noStep><p class="hint">Aucune étape. Composez une opération puis « Ajouter à la recette ».</p></ng-template>
+
+      <label>Nom de la recette</label>
+      <input type="text" [(ngModel)]="recipeName" placeholder="Ex. Zone tampon dissoute" />
+      <div class="actions">
+        <button (click)="saveRecipe(true)"  [disabled]="running || !draft.length">Enregistrer & exécuter</button>
+        <button class="secondary" (click)="saveRecipe(false)" [disabled]="running || !draft.length">Enregistrer seulement</button>
+      </div>
+    </section>
+
+    <!-- ── Recettes enregistrées ──────────────────────────────────────── -->
+    <section class="card">
+      <h3>3. Recettes enregistrées</h3>
+      <ul class="recipes" *ngIf="recipes.length; else noRec">
+        <li *ngFor="let r of recipes">
+          <div class="r-head">
+            <strong>{{ r.name }}</strong>
+            <span class="count">{{ r.steps.length }} étape(s)</span>
+          </div>
+          <div class="r-actions">
+            <button (click)="replay(r)" [disabled]="running">Rejouer</button>
+            <button class="del" (click)="deleteRecipe(r)">Supprimer</button>
+          </div>
+        </li>
+      </ul>
+      <ng-template #noRec><p class="hint">Aucune recette enregistrée.</p></ng-template>
+    </section>
+  </div>
+</div>

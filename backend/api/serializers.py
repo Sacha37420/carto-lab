@@ -1,5 +1,12 @@
 from rest_framework import serializers
-from .models import Department, Layer, UserRecord
+from .models import Department, Layer, Recipe, UserRecord
+
+
+class RecipeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Recipe
+        fields = ['id', 'name', 'steps', 'owner_email', 'result_layer', 'created_at']
+        read_only_fields = ['id', 'owner_email', 'result_layer', 'created_at']
 
 
 class LayerSerializer(serializers.ModelSerializer):

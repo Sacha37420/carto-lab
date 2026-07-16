@@ -36,6 +36,38 @@ export interface GeoJSONFeatureCollection {
   features: unknown[];
 }
 
+export interface OpParam {
+  name: string;
+  type: string;
+  label: string;
+  default?: unknown;
+  options?: { value: string; label: string }[];
+}
+
+export interface Operation {
+  name: string;
+  label: string;
+  description: string;
+  inputs: number;
+  params: OpParam[];
+  output_geom: string;
+}
+
+export interface RecipeStep {
+  op: string;
+  params?: Record<string, unknown>;
+  inputs: ({ layer: number } | { step: number })[];
+  name?: string;
+}
+
+export interface Recipe {
+  id: number;
+  name: string;
+  steps: RecipeStep[];
+  result_layer: number | null;
+  created_at: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class ApiService {
   private http = inject(HttpClient);
@@ -94,5 +126,33 @@ export class ApiService {
       `${this.base}/api/crs/transform-point/`,
       { x, y, from_srid: fromSrid, to_srid: toSrid },
     );
+  }
+
+  // ── Moteur de calculs (Feature 3) ────────────────────────────────────────
+  getProcessings(): Observable<Operation[]> {
+    return this.http.get<Operation[]>(`${this.base}/api/processings/`);
+  }
+
+  runProcessing(operation: string, inputs: number[], params: Record<string, unknown>, name?: string):
+    Observable<LayerMeta> {
+    return this.http.post<LayerMeta>(`${this.base}/api/processings/run/`,
+      { operation, inputs, params, name });
+  }
+
+  // ── Recettes / constructeur (Feature 6) ──────────────────────────────────
+  getRecipes(): Observable<Recipe[]> {
+    return this.http.get<Recipe[]>(`${this.base}/api/recipes/`);
+  }
+
+  createRecipe(name: string, steps: RecipeStep[]): Observable<Recipe> {
+    return this.http.post<Recipe>(`${this.base}/api/recipes/`, { name, steps });
+  }
+
+  runRecipe(id: number): Observable<LayerMeta> {
+    return this.http.post<LayerMeta>(`${this.base}/api/recipes/${id}/run/`, {});
+  }
+
+  deleteRecipe(id: number): Observable<void> {
+    return this.http.delete<void>(`${this.base}/api/recipes/${id}/`);
   }
 }
