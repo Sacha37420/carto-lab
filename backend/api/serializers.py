@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Department, Layer, Recipe, UserRecord
+from .models import Department, Job, Layer, Recipe, UserRecord
 
 
 class RecipeSerializer(serializers.ModelSerializer):
@@ -7,6 +7,14 @@ class RecipeSerializer(serializers.ModelSerializer):
         model = Recipe
         fields = ['id', 'name', 'steps', 'owner_email', 'result_layer', 'created_at']
         read_only_fields = ['id', 'owner_email', 'result_layer', 'created_at']
+
+
+class JobSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Job
+        fields = ['id', 'kind', 'status', 'progress', 'message', 'params',
+                  'result_layer', 'created_at', 'updated_at']
+        read_only_fields = fields
 
 
 class LayerSerializer(serializers.ModelSerializer):

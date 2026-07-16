@@ -9,13 +9,18 @@ from rest_framework.response import Response
 from django.contrib.gis.geos import GEOSGeometry
 from drf_spectacular.utils import extend_schema, OpenApiParameter
 
-from .models import Department, Feature, Layer, Recipe, UserRecord
+from .models import Department, Feature, Job, Layer, Recipe, UserRecord
 from .serializers import (
-    DepartmentSerializer, LayerSerializer, RecipeSerializer, UserRecordSerializer,
+    DepartmentSerializer, JobSerializer, LayerSerializer, RecipeSerializer,
+    UserRecordSerializer,
 )
 from . import crs as crs_mod
 from .geo import LayerImportError, import_layer
 from . import processing
+from . import indicators as ind_mod
+from . import choropleth as choro_mod
+from . import secret_store
+from .tasks import build_meteo_choropleth
 
 
 class MeView(APIView):
@@ -355,3 +360,81 @@ class RecipeRunView(APIView):
             LayerSerializer(layer, context={'request': request}).data,
             status=status.HTTP_201_CREATED,
         )
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# MÉTÉO-FRANCE — grandeurs, lancement de job async, suivi (Feature 4)
+# ──────────────────────────────────────────────────────────────────────────────
+class MeteoOptionsView(APIView):
+    """GET /api/meteo/options/ — grandeurs, indicateurs, classifications, rampes (pour l'UI)."""
+
+    def get(self, request):
+        return Response({
+            'grandeurs': [
+                {'key': k, 'label': v['label'], 'unit': v['unit']}
+                for k, v in ind_mod.GRANDEURS.items()
+            ],
+            'indicators': ind_mod.catalog(),
+            'classifications': choro_mod.CLASSIFICATIONS,
+            'ramps': list(choro_mod.RAMPS.keys()),
+        })
+
+
+class MeteoJobLaunchView(APIView):
+    """
+    POST /api/meteo/jobs/ — lance la construction async d'une carte Météo-France.
+    La clé API est fournie dans le header `X-Meteo-Key` (jamais dans le corps, jamais
+    persistée) et déposée en Redis éphémère ; seul un jeton transite vers le worker.
+    Corps : { grandeur, year, indicator, indicator_params?, classification?, n_classes?,
+              ramp?, max_stations? }
+    """
+
+    def post(self, request):
+        api_key = request.headers.get('X-Meteo-Key', '').strip()
+        if not api_key:
+            return Response({'detail': "Clé API Météo-France manquante (header X-Meteo-Key)."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        d = request.data
+        if d.get('grandeur') not in ind_mod.GRANDEURS:
+            return Response({'detail': "Grandeur invalide."}, status=status.HTTP_400_BAD_REQUEST)
+        if d.get('indicator') not in ind_mod.INDICATORS:
+            return Response({'detail': "Indicateur invalide."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            year = int(d.get('year'))
+        except (TypeError, ValueError):
+            return Response({'detail': "Année invalide."}, status=status.HTTP_400_BAD_REQUEST)
+
+        params = {
+            'grandeur': d['grandeur'],
+            'year': year,
+            'indicator': d['indicator'],
+            'indicator_params': d.get('indicator_params', {}),
+            'classification': d.get('classification', 'quantiles'),
+            'n_classes': int(d.get('n_classes', 5)),
+            'ramp': d.get('ramp', 'YlOrRd'),
+            'max_stations': d.get('max_stations'),
+        }
+        job = Job.objects.create(
+            kind='meteofrance', status=Job.PENDING, params=params,
+            owner_email=getattr(request.user, 'email', ''),
+        )
+        token = secret_store.put(api_key)             # clé éphémère en Redis
+        build_meteo_choropleth.delay(job.id, token, params)
+        return Response(JobSerializer(job).data, status=status.HTTP_202_ACCEPTED)
+
+
+class JobsView(APIView):
+    """GET /api/jobs/ — liste des jobs (récents)."""
+
+    def get(self, request):
+        return Response(JobSerializer(Job.objects.all()[:50], many=True).data)
+
+
+class JobDetailView(APIView):
+    """GET /api/jobs/<id>/ — état d'un job (polling frontend)."""
+
+    def get(self, request, pk):
+        try:
+            return Response(JobSerializer(Job.objects.get(pk=pk)).data)
+        except Job.DoesNotExist:
+            return Response(status=status.HTTP_404_NOT_FOUND)

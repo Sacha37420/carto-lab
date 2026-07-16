@@ -68,6 +68,23 @@ _script = FORCE_SCRIPT_NAME.rstrip('/')
 # Préfixe le chemin public par SCRIPT_NAME pour rester correct derrière Caddy.
 MEDIA_URL = f'{_script}/media/' if _script else '/media/'
 
+# ── Celery / file de tâches asynchrones ────────────────────────────────────────
+CELERY_BROKER_URL = config('CELERY_BROKER_URL', default='redis://redis:6379/0')
+CELERY_RESULT_BACKEND = config('CELERY_RESULT_BACKEND', default='redis://redis:6379/1')
+CELERY_TASK_TRACK_STARTED = True
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+# Redis pour le stockage éphémère des clés API Météo-France (jamais en base) :
+# réutilise le broker Celery, base 2.
+REDIS_SECRETS_URL = config('REDIS_SECRETS_URL', default='redis://redis:6379/2')
+
+# ── Météo-France (API Données Climatologiques - DPClim) ────────────────────────
+METEOFRANCE_BASE_URL = config(
+    'METEOFRANCE_BASE_URL',
+    default='https://public-api.meteofrance.fr/public/DPClim/v1',
+)
+
 # ── Limites d'upload (sécurité — cf. to_do « Uploads : valider strictement ») ──
 MAX_UPLOAD_BYTES = config('MAX_UPLOAD_BYTES', default=104857600, cast=int)  # 100 Mo
 DATA_UPLOAD_MAX_MEMORY_SIZE = MAX_UPLOAD_BYTES

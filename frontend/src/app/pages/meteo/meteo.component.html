@@ -1,0 +1,94 @@
+<app-navbar></app-navbar>
+
+<div class="meteo-page">
+  <h2>Cartographie Météo-France</h2>
+  <p class="lead">
+    Construit une choroplèthe (Voronoï des stations découpé sur la France) pour une
+    grandeur, une année et un indicateur. Traitement <strong>asynchrone</strong> :
+    suivez la progression ci-dessous, puis ouvrez le résultat dans la
+    <a routerLink="/map">carte</a>.
+  </p>
+
+  <div class="grid">
+    <!-- ── Formulaire ─────────────────────────────────────────────────── -->
+    <section class="card" *ngIf="options">
+      <h3>Paramètres</h3>
+
+      <label>Clé API Météo-France <span class="sec">(header uniquement — jamais stockée en base)</span></label>
+      <input type="password" [(ngModel)]="apiKey" (blur)="saveKey()"
+             placeholder="Votre clé DPClim" autocomplete="off" />
+
+      <label>Grandeur</label>
+      <select [(ngModel)]="form.grandeur">
+        <option *ngFor="let g of options.grandeurs" [value]="g.key">{{ g.label }} ({{ g.unit }})</option>
+      </select>
+
+      <label>Année</label>
+      <input type="number" [(ngModel)]="form.year" min="1950" max="2025" />
+
+      <label>Indicateur</label>
+      <select [(ngModel)]="form.indicator" (ngModelChange)="onIndicatorChange()">
+        <option *ngFor="let i of options.indicators" [value]="i.name">{{ i.label }}</option>
+      </select>
+
+      <ng-container *ngFor="let p of indicatorParamDefs">
+        <label>{{ p.label }}</label>
+        <input [type]="p.type === 'number' ? 'number' : 'text'" [(ngModel)]="indicatorParams[p.name]" />
+      </ng-container>
+
+      <div class="two">
+        <div>
+          <label>Classification</label>
+          <select [(ngModel)]="form.classification">
+            <option *ngFor="let c of options.classifications" [value]="c">{{ c }}</option>
+          </select>
+        </div>
+        <div>
+          <label>Nb de classes</label>
+          <input type="number" [(ngModel)]="form.n_classes" min="2" max="8" />
+        </div>
+      </div>
+
+      <div class="two">
+        <div>
+          <label>Rampe de couleurs</label>
+          <select [(ngModel)]="form.ramp">
+            <option *ngFor="let r of options.ramps" [value]="r">{{ r }}</option>
+          </select>
+        </div>
+        <div>
+          <label>Max stations <span class="sec">(démo)</span></label>
+          <input type="number" [(ngModel)]="form.max_stations" min="1" placeholder="toutes" />
+        </div>
+      </div>
+
+      <button (click)="launch()" [disabled]="current?.status === 'RUNNING' || current?.status === 'PENDING'">
+        Lancer la construction
+      </button>
+      <p class="err" *ngIf="err">{{ err }}</p>
+    </section>
+
+    <!-- ── Suivi du job courant ───────────────────────────────────────── -->
+    <section class="card">
+      <h3>Progression</h3>
+      <ng-container *ngIf="current; else noJob">
+        <div class="status" [class]="current.status.toLowerCase()">{{ current.status }}</div>
+        <div class="bar"><div class="fill" [style.width.%]="current.progress"></div></div>
+        <p class="msg">{{ current.message || '…' }}</p>
+        <a *ngIf="current.status === 'DONE' && current.result_layer"
+           class="result" routerLink="/map">→ Ouvrir la carte résultat</a>
+      </ng-container>
+      <ng-template #noJob><p class="hint">Aucun traitement en cours.</p></ng-template>
+
+      <h3 class="mt">Jobs récents</h3>
+      <ul class="jobs">
+        <li *ngFor="let j of jobs; trackBy: trackJob">
+          <span class="badge" [class]="j.status.toLowerCase()">{{ j.status }}</span>
+          <span class="jlabel">{{ j.params['grandeur'] }} {{ j.params['year'] }} · {{ j.params['indicator'] }}</span>
+          <a *ngIf="j.result_layer" routerLink="/map" class="link">carte</a>
+        </li>
+        <li *ngIf="!jobs.length" class="hint">Aucun job.</li>
+      </ul>
+    </section>
+  </div>
+</div>

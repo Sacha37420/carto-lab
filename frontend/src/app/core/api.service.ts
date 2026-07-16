@@ -1,5 +1,5 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Observable } from 'rxjs';
 
 interface EnvWindow {
@@ -66,6 +66,36 @@ export interface Recipe {
   steps: RecipeStep[];
   result_layer: number | null;
   created_at: string;
+}
+
+export interface MeteoOptions {
+  grandeurs: { key: string; label: string; unit: string }[];
+  indicators: { name: string; label: string; params: OpParam[]; column: string | null }[];
+  classifications: string[];
+  ramps: string[];
+}
+
+export interface Job {
+  id: number;
+  kind: string;
+  status: 'PENDING' | 'RUNNING' | 'DONE' | 'ERROR';
+  progress: number;
+  message: string;
+  params: Record<string, unknown>;
+  result_layer: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MeteoJobRequest {
+  grandeur: string;
+  year: number;
+  indicator: string;
+  indicator_params?: Record<string, unknown>;
+  classification?: string;
+  n_classes?: number;
+  ramp?: string;
+  max_stations?: number | null;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -154,5 +184,24 @@ export class ApiService {
 
   deleteRecipe(id: number): Observable<void> {
     return this.http.delete<void>(`${this.base}/api/recipes/${id}/`);
+  }
+
+  // ── Météo-France (Feature 4) + jobs async ────────────────────────────────
+  getMeteoOptions(): Observable<MeteoOptions> {
+    return this.http.get<MeteoOptions>(`${this.base}/api/meteo/options/`);
+  }
+
+  /** Lance un job. La clé API part dans le header X-Meteo-Key (jamais dans le corps). */
+  launchMeteoJob(apiKey: string, body: MeteoJobRequest): Observable<Job> {
+    const headers = new HttpHeaders({ 'X-Meteo-Key': apiKey });
+    return this.http.post<Job>(`${this.base}/api/meteo/jobs/`, body, { headers });
+  }
+
+  getJobs(): Observable<Job[]> {
+    return this.http.get<Job[]>(`${this.base}/api/jobs/`);
+  }
+
+  getJob(id: number): Observable<Job> {
+    return this.http.get<Job>(`${this.base}/api/jobs/${id}/`);
   }
 }

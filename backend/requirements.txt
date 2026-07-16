@@ -10,6 +10,11 @@ django-cors-headers>=3.14.0
 PyJWT>=2.8
 cryptography>=40.0
 
+# ── File de tâches asynchrones (imports Météo-France, calculs longs) ───────────
+celery>=5.3
+redis>=5.0
+requests>=2.31
+
 # ── Stack SIG (GeoDjango s'appuie sur libgdal/libgeos/libproj système) ─────────
 # Le binding Python GDAL est installé séparément dans le Dockerfile, à la version
 # exacte de la lib système (pip install GDAL==$(gdal-config --version)).

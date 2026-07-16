@@ -16,14 +16,20 @@ import { transform } from 'ol/proj';
 import { Fill, Stroke, Style, Circle as CircleStyle } from 'ol/style';
 import type { Coordinate } from 'ol/coordinate';
 import type Feature from 'ol/Feature';
+import type { FeatureLike } from 'ol/Feature';
+import type { StyleFunction } from 'ol/style/Style';
 
 import { NavbarComponent } from '../../shared/navbar/navbar.component';
 import { ApiService, CrsInfo, LayerMeta } from '../../core/api.service';
 import { DISPLAY_CRS, registerProjections } from '../../core/projections';
 
+interface LegendEntry { min: number; max: number; color: string; }
+
 interface ActiveLayer {
   olLayer: VectorLayer;
   geojson: unknown; // GeoJSON en EPSG:4326 (mis en cache pour re-projeter à la volée)
+  meta: LayerMeta;
+  legend?: { title: string; entries: LegendEntry[] };
 }
 
 const PALETTE = ['#2563eb', '#dc2626', '#16a34a', '#d97706', '#7c3aed', '#0891b2'];
@@ -135,13 +141,17 @@ export class MapComponent implements AfterViewInit, OnDestroy {
     });
   }
 
-  private styleFor(idx: number): Style {
-    const color = PALETTE[idx % PALETTE.length];
-    return new Style({
-      stroke: new Stroke({ color, width: 2 }),
-      fill: new Fill({ color: color + '33' }),
-      image: new CircleStyle({ radius: 5, fill: new Fill({ color }), stroke: new Stroke({ color: '#fff', width: 1 }) }),
-    });
+  /** Style par entité : couleur choroplèthe (__color) si présente, sinon palette. */
+  private styleFor(idx: number): StyleFunction {
+    const base = PALETTE[idx % PALETTE.length];
+    return (feature: FeatureLike) => {
+      const color = (feature.get('__color') as string) || base;
+      return new Style({
+        stroke: new Stroke({ color: feature.get('__color') ? '#334155' : color, width: feature.get('__color') ? 0.6 : 2 }),
+        fill: new Fill({ color: color + (feature.get('__color') ? 'cc' : '33') }),
+        image: new CircleStyle({ radius: 5, fill: new Fill({ color }), stroke: new Stroke({ color: '#fff', width: 1 }) }),
+      });
+    };
   }
 
   private addVector(layer: LayerMeta, geojson: unknown): void {
@@ -152,12 +162,60 @@ export class MapComponent implements AfterViewInit, OnDestroy {
     const source = new VectorSource({ features });
     const olLayer = new VectorLayer({ source, style: this.styleFor(this.active.size) });
     this.map.addLayer(olLayer);
-    this.active.set(layer.id, { olLayer, geojson });
+
+    // Légende choroplèthe (métadonnées de la couche calculée).
+    const choro = (layer.metadata as Record<string, unknown>)?.['choropleth'] as
+      { title?: string; legend?: LegendEntry[] } | undefined;
+    const legend = choro?.legend
+      ? { title: choro.title || layer.name, entries: choro.legend }
+      : undefined;
+
+    this.active.set(layer.id, { olLayer, geojson, meta: layer, legend });
 
     const extent = source.getExtent();
     if (extent && isFinite(extent[0])) {
       this.map.getView().fit(extent, { padding: [40, 40, 40, 40], maxZoom: 14, duration: 300 });
     }
+  }
+
+  /** Légendes des couches actives (pour le panneau). */
+  activeLegends(): { title: string; entries: LegendEntry[] }[] {
+    return [...this.active.values()].filter((a) => a.legend).map((a) => a.legend!);
+  }
+
+  hasActive(): boolean { return this.active.size > 0; }
+
+  // ── Exports ────────────────────────────────────────────────────────────────
+  exportPng(): void {
+    this.map.once('rendercomplete', () => {
+      const mapCanvas = document.createElement('canvas');
+      const size = this.map.getSize();
+      if (!size) return;
+      mapCanvas.width = size[0]; mapCanvas.height = size[1];
+      const ctx = mapCanvas.getContext('2d')!;
+      this.mapEl.nativeElement.querySelectorAll('.ol-layer canvas').forEach((c) => {
+        const canvas = c as HTMLCanvasElement;
+        if (canvas.width > 0) ctx.drawImage(canvas, 0, 0);
+      });
+      const a = document.createElement('a');
+      a.href = mapCanvas.toDataURL('image/png');
+      a.download = 'carte.png';
+      a.click();
+    });
+    this.map.renderSync();
+  }
+
+  exportGeoJSON(): void {
+    const first = [...this.active.values()][0];
+    if (!first) { this.error = 'Activez une couche à exporter.'; return; }
+    this.api.getLayerGeoJSON(first.meta.id).subscribe((gj) => {
+      const blob = new Blob([JSON.stringify(gj)], { type: 'application/geo+json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `${first.meta.name}.geojson`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    });
   }
 
   deleteLayer(layer: LayerMeta, ev: Event): void {

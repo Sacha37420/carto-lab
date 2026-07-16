@@ -50,6 +50,12 @@
     </section>
 
     <section class="block">
+      <h3>Export</h3>
+      <button (click)="exportPng()" [disabled]="!hasActive()">Exporter la carte (PNG)</button>
+      <button (click)="exportGeoJSON()" [disabled]="!hasActive()">Télécharger la couche (GeoJSON)</button>
+    </section>
+
+    <section class="block">
       <h3>Convertir un point</h3>
       <div class="grid2">
         <input type="number" placeholder="X / lon" [(ngModel)]="tp.x" />
@@ -68,6 +74,17 @@
   <!-- ── Carte ───────────────────────────────────────────────────────── -->
   <div class="map-wrap">
     <div #mapEl class="map"></div>
+
+    <!-- Légende(s) choroplèthe -->
+    <div class="legend" *ngIf="activeLegends().length">
+      <div class="legend-box" *ngFor="let lg of activeLegends()">
+        <div class="legend-title">{{ lg.title }}</div>
+        <div class="legend-row" *ngFor="let e of lg.entries">
+          <span class="swatch" [style.background]="e.color"></span>
+          <span class="range">{{ e.min }} – {{ e.max }}</span>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
