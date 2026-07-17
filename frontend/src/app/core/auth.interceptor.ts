@@ -12,11 +12,16 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
     return next(req.clone({ setHeaders: { Authorization: `Bearer ${token}` } }));
   }
 
-  // Chemin async : token expiré ou absent — tentative de refresh
+  // Chemin async : token expiré ou absent — tentative de refresh.
+  // Si le refresh échoue, kc.getToken() renvoie encore l'ANCIEN token expiré
+  // (keycloak-js ne le vide pas) : ne jamais le rattacher dans ce cas, sinon
+  // la requête part avec un Bearer qu'on sait déjà invalide.
   return from(kc.updateToken(-1)).pipe(
     switchMap(() => {
       const fresh = kc.getToken();
-      if (fresh) req = req.clone({ setHeaders: { Authorization: `Bearer ${fresh}` } });
+      if (fresh && !kc.isTokenExpired(0)) {
+        req = req.clone({ setHeaders: { Authorization: `Bearer ${fresh}` } });
+      }
       return next(req);
     }),
     catchError(() => next(req)),

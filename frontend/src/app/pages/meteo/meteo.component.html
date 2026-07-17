@@ -10,8 +10,15 @@
   </p>
 
   <div class="grid">
+    <!-- ── Échec du chargement des options : jamais de vide silencieux ──── -->
+    <section class="card" *ngIf="optionsError()">
+      <h3>Paramètres</h3>
+      <p class="err">Impossible de charger les options (grandeurs, indicateurs…).</p>
+      <button (click)="loadOptions()">Réessayer</button>
+    </section>
+
     <!-- ── Formulaire ─────────────────────────────────────────────────── -->
-    <section class="card" *ngIf="options">
+    <section class="card" *ngIf="options() as opts">
       <h3>Paramètres</h3>
 
       <label>Clé API Météo-France <span class="sec">(header uniquement — jamais stockée en base)</span></label>
@@ -20,7 +27,7 @@
 
       <label>Grandeur</label>
       <select [(ngModel)]="form.grandeur">
-        <option *ngFor="let g of options.grandeurs" [value]="g.key">{{ g.label }} ({{ g.unit }})</option>
+        <option *ngFor="let g of opts.grandeurs" [value]="g.key">{{ g.label }} ({{ g.unit }})</option>
       </select>
 
       <label>Année</label>
@@ -28,7 +35,7 @@
 
       <label>Indicateur</label>
       <select [(ngModel)]="form.indicator" (ngModelChange)="onIndicatorChange()">
-        <option *ngFor="let i of options.indicators" [value]="i.name">{{ i.label }}</option>
+        <option *ngFor="let i of opts.indicators" [value]="i.name">{{ i.label }}</option>
       </select>
 
       <ng-container *ngFor="let p of indicatorParamDefs">
@@ -40,7 +47,7 @@
         <div>
           <label>Classification</label>
           <select [(ngModel)]="form.classification">
-            <option *ngFor="let c of options.classifications" [value]="c">{{ c }}</option>
+            <option *ngFor="let c of opts.classifications" [value]="c">{{ c }}</option>
           </select>
         </div>
         <div>
@@ -53,7 +60,7 @@
         <div>
           <label>Rampe de couleurs</label>
           <select [(ngModel)]="form.ramp">
-            <option *ngFor="let r of options.ramps" [value]="r">{{ r }}</option>
+            <option *ngFor="let r of opts.ramps" [value]="r">{{ r }}</option>
           </select>
         </div>
         <div>
@@ -62,32 +69,32 @@
         </div>
       </div>
 
-      <button (click)="launch()" [disabled]="current?.status === 'RUNNING' || current?.status === 'PENDING'">
+      <button (click)="launch()" [disabled]="current()?.status === 'RUNNING' || current()?.status === 'PENDING'">
         Lancer la construction
       </button>
-      <p class="err" *ngIf="err">{{ err }}</p>
+      <p class="err" *ngIf="err()">{{ err() }}</p>
     </section>
 
     <!-- ── Suivi du job courant ───────────────────────────────────────── -->
     <section class="card">
       <h3>Progression</h3>
-      <ng-container *ngIf="current; else noJob">
-        <div class="status" [class]="current.status.toLowerCase()">{{ current.status }}</div>
-        <div class="bar"><div class="fill" [style.width.%]="current.progress"></div></div>
-        <p class="msg">{{ current.message || '…' }}</p>
-        <a *ngIf="current.status === 'DONE' && current.result_layer"
+      <ng-container *ngIf="current() as cur; else noJob">
+        <div class="status" [class]="cur.status.toLowerCase()">{{ cur.status }}</div>
+        <div class="bar"><div class="fill" [style.width.%]="cur.progress"></div></div>
+        <p class="msg">{{ cur.message || '…' }}</p>
+        <a *ngIf="cur.status === 'DONE' && cur.result_layer"
            class="result" routerLink="/map">→ Ouvrir la carte résultat</a>
       </ng-container>
       <ng-template #noJob><p class="hint">Aucun traitement en cours.</p></ng-template>
 
       <h3 class="mt">Jobs récents</h3>
       <ul class="jobs">
-        <li *ngFor="let j of jobs; trackBy: trackJob">
+        <li *ngFor="let j of jobs(); trackBy: trackJob">
           <span class="badge" [class]="j.status.toLowerCase()">{{ j.status }}</span>
           <span class="jlabel">{{ j.params['grandeur'] }} {{ j.params['year'] }} · {{ j.params['indicator'] }}</span>
           <a *ngIf="j.result_layer" routerLink="/map" class="link">carte</a>
         </li>
-        <li *ngIf="!jobs.length" class="hint">Aucun job.</li>
+        <li *ngIf="!jobs().length" class="hint">Aucun job.</li>
       </ul>
     </section>
   </div>

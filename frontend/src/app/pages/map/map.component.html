@@ -10,18 +10,18 @@
       <input type="text" placeholder="Nom de la couche" [(ngModel)]="uploadName" />
       <input type="number" placeholder="CRS source (EPSG) — si absent du fichier"
              [(ngModel)]="uploadSrid" />
-      <button (click)="upload()" [disabled]="!selectedFile || importing">
-        {{ importing ? 'Import en cours…' : 'Importer' }}
+      <button (click)="upload()" [disabled]="!selectedFile || importing()">
+        {{ importing() ? 'Import en cours…' : 'Importer' }}
       </button>
       <p class="hint">Formats : GeoJSON, Shapefile (.zip), GeoPackage, KML/KMZ, GML, CSV (lat/lon), GeoTIFF.</p>
-      <p class="ok" *ngIf="message">{{ message }}</p>
-      <p class="err" *ngIf="error">{{ error }}</p>
+      <p class="ok" *ngIf="message()">{{ message() }}</p>
+      <p class="err" *ngIf="error()">{{ error() }}</p>
     </section>
 
     <section class="block">
-      <h3>Couches ({{ layers.length }})</h3>
+      <h3>Couches ({{ layers().length }})</h3>
       <ul class="layer-list">
-        <li *ngFor="let l of layers" [class.active]="isActive(l.id)">
+        <li *ngFor="let l of layers()" [class.active]="isActive(l.id)">
           <label>
             <input type="checkbox" [checked]="isActive(l.id)" (change)="toggleLayer(l)"
                    [disabled]="l.layer_type !== 'vector'" />
@@ -35,7 +35,7 @@
             <span class="tag qgis" *ngIf="l.published_qgis">QGIS</span>
           </div>
           <div class="pub-actions" *ngIf="l.layer_type === 'vector'">
-            <button *ngIf="!l.published_qgis" (click)="publish(l, $event)" [disabled]="publishing">
+            <button *ngIf="!l.published_qgis" (click)="publish(l, $event)" [disabled]="publishing()">
               Publier vers QGIS
             </button>
             <button *ngIf="l.published_qgis" (click)="showPublishInfo(l, $event)">Infos QGIS</button>
@@ -43,7 +43,7 @@
           </div>
           <button class="del" (click)="deleteLayer(l, $event)" title="Supprimer">✕</button>
         </li>
-        <li *ngIf="!layers.length" class="empty">Aucune couche. Importez un fichier.</li>
+        <li *ngIf="!layers().length" class="empty">Aucune couche. Importez un fichier.</li>
       </ul>
     </section>
 
@@ -52,8 +52,8 @@
       <select [ngModel]="displayCrs" (ngModelChange)="changeDisplayCrs($event)">
         <option *ngFor="let c of displayCrsOptions" [value]="c.srid">{{ c.label }}</option>
       </select>
-      <p class="hint" *ngIf="cursor">
-        Curseur : <strong>{{ cursor.x }}, {{ cursor.y }}</strong> (EPSG:{{ displayCrs }})
+      <p class="hint" *ngIf="cursor() as c">
+        Curseur : <strong>{{ c.x }}, {{ c.y }}</strong> (EPSG:{{ displayCrs }})
       </p>
     </section>
 
@@ -72,9 +72,9 @@
         <input type="number" placeholder="Vers (EPSG)" [(ngModel)]="tp.to" />
       </div>
       <button (click)="runTransform()">Convertir</button>
-      <p class="ok" *ngIf="tpResult">
-        → {{ tpResult.x | number:'1.0-6' }}, {{ tpResult.y | number:'1.0-6' }}
-        (EPSG:{{ tpResult.srid }})
+      <p class="ok" *ngIf="tpResult() as tr">
+        → {{ tr.x | number:'1.0-6' }}, {{ tr.y | number:'1.0-6' }}
+        (EPSG:{{ tr.srid }})
       </p>
     </section>
   </aside>
@@ -97,7 +97,7 @@
 </div>
 
 <!-- ── Infos de connexion QGIS (OGC API – Features) ────────────────────── -->
-<div class="modal-backdrop" *ngIf="publishInfo" (click)="closePublishInfo()">
+<div class="modal-backdrop" *ngIf="publishInfo() as info" (click)="closePublishInfo()">
   <div class="modal" (click)="$event.stopPropagation()">
     <button class="close" (click)="closePublishInfo()">✕</button>
     <h3>Accès QGIS — OGC API – Features</h3>
@@ -109,34 +109,34 @@
 
     <label>URL du service</label>
     <div class="copy-row">
-      <code>{{ publishInfo.ogc_url }}</code>
-      <button (click)="copy(publishInfo.ogc_url || '')">Copier</button>
+      <code>{{ info.ogc_url }}</code>
+      <button (click)="copy(info.ogc_url || '')">Copier</button>
     </div>
 
     <label>Collection</label>
     <div class="copy-row">
-      <code>{{ publishInfo.collection }}</code>
-      <button (click)="copy(publishInfo.collection || '')">Copier</button>
+      <code>{{ info.collection }}</code>
+      <button (click)="copy(info.collection || '')">Copier</button>
     </div>
 
     <label>URL des entités (items)</label>
     <div class="copy-row">
-      <code>{{ publishInfo.items_url }}</code>
-      <button (click)="copy(publishInfo.items_url || '')">Copier</button>
+      <code>{{ info.items_url }}</code>
+      <button (click)="copy(info.items_url || '')">Copier</button>
     </div>
 
     <label>Marche à suivre</label>
     <ol class="steps">
-      <li *ngFor="let s of publishInfo.qgis_steps">{{ s }}</li>
+      <li *ngFor="let s of info.qgis_steps">{{ s }}</li>
     </ol>
   </div>
 </div>
 
 <!-- Popup d'attributs -->
-<div #popupEl class="ol-popup" [class.hidden]="!popupProps">
+<div #popupEl class="ol-popup" [class.hidden]="!popupProps()">
   <button class="close" (click)="closePopup()">✕</button>
-  <table *ngIf="popupProps">
-    <tr *ngFor="let e of propEntries(popupProps)">
+  <table *ngIf="popupProps() as props">
+    <tr *ngFor="let e of propEntries(props)">
       <th>{{ e.k }}</th><td>{{ e.v }}</td>
     </tr>
   </table>

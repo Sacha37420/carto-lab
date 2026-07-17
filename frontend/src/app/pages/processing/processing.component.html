@@ -7,8 +7,8 @@
     <a routerLink="/map">carte</a>). Enchaînez-les en une recette rejouable.
   </p>
 
-  <p class="ok" *ngIf="msg">{{ msg }}</p>
-  <p class="err" *ngIf="err">{{ err }}</p>
+  <p class="ok" *ngIf="msg()">{{ msg() }}</p>
+  <p class="err" *ngIf="err()">{{ err() }}</p>
 
   <div class="columns">
     <!-- ── Composer une opération ─────────────────────────────────────── -->
@@ -17,7 +17,7 @@
       <label>Traitement</label>
       <select [(ngModel)]="op" (ngModelChange)="onOpChange()">
         <option [ngValue]="null" disabled>— choisir —</option>
-        <option *ngFor="let o of operations" [ngValue]="o">{{ o.label }}</option>
+        <option *ngFor="let o of operations()" [ngValue]="o">{{ o.label }}</option>
       </select>
       <p class="hint" *ngIf="op">{{ op.description }}</p>
 
@@ -42,8 +42,8 @@
         </ng-container>
 
         <div class="actions">
-          <button (click)="runSingle()" [disabled]="running">Exécuter maintenant</button>
-          <button class="secondary" (click)="addStep()" [disabled]="running">Ajouter à la recette ↓</button>
+          <button (click)="runSingle()" [disabled]="running()">Exécuter maintenant</button>
+          <button class="secondary" (click)="addStep()" [disabled]="running()">Ajouter à la recette ↓</button>
         </div>
       </ng-container>
     </section>
@@ -51,8 +51,8 @@
     <!-- ── Recette en construction ────────────────────────────────────── -->
     <section class="card">
       <h3>2. Recette (pipeline)</h3>
-      <ol class="steps" *ngIf="draft.length; else noStep">
-        <li *ngFor="let s of draft; let i = index">
+      <ol class="steps" *ngIf="draft().length; else noStep">
+        <li *ngFor="let s of draft(); let i = index">
           <span>{{ stepSummary(s) }}</span>
           <button class="del" (click)="removeStep(i)" title="Tronquer ici">✕</button>
         </li>
@@ -62,22 +62,22 @@
       <label>Nom de la recette</label>
       <input type="text" [(ngModel)]="recipeName" placeholder="Ex. Zone tampon dissoute" />
       <div class="actions">
-        <button (click)="saveRecipe(true)"  [disabled]="running || !draft.length">Enregistrer & exécuter</button>
-        <button class="secondary" (click)="saveRecipe(false)" [disabled]="running || !draft.length">Enregistrer seulement</button>
+        <button (click)="saveRecipe(true)"  [disabled]="running() || !draft().length">Enregistrer & exécuter</button>
+        <button class="secondary" (click)="saveRecipe(false)" [disabled]="running() || !draft().length">Enregistrer seulement</button>
       </div>
     </section>
 
     <!-- ── Recettes enregistrées ──────────────────────────────────────── -->
     <section class="card">
       <h3>3. Recettes enregistrées</h3>
-      <ul class="recipes" *ngIf="recipes.length; else noRec">
-        <li *ngFor="let r of recipes">
+      <ul class="recipes" *ngIf="recipes().length; else noRec">
+        <li *ngFor="let r of recipes()">
           <div class="r-head">
             <strong>{{ r.name }}</strong>
             <span class="count">{{ r.steps.length }} étape(s)</span>
           </div>
           <div class="r-actions">
-            <button (click)="replay(r)" [disabled]="running">Rejouer</button>
+            <button (click)="replay(r)" [disabled]="running()">Rejouer</button>
             <button class="del" (click)="deleteRecipe(r)">Supprimer</button>
           </div>
         </li>

@@ -1,4 +1,4 @@
-import { Component, OnDestroy, OnInit, inject } from '@angular/core';
+import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
@@ -16,8 +16,16 @@ import { ApiService, Job, MeteoOptions, OpParam } from '../../core/api.service';
 export class MeteoComponent implements OnInit, OnDestroy {
   private api = inject(ApiService);
 
-  options: MeteoOptions | null = null;
-  jobs: Job[] = [];
+  // Signals : cette app tourne sans zone.js (zoneless). Un champ simple muté
+  // depuis un callback HTTP/setInterval ne déclenche AUCUN rafraîchissement de
+  // vue automatique — seul un signal (ou un événement natif Angular, ex.
+  // (click)/[(ngModel)]) le fait. D'où le bug observé : les données arrivaient
+  // bien, mais l'écran restait figé jusqu'au prochain clic ailleurs.
+  options = signal<MeteoOptions | null>(null);
+  optionsError = signal(false);
+  jobs = signal<Job[]>([]);
+  current = signal<Job | null>(null);
+  err = signal('');
 
   // La clé n'est conservée que le temps de la session onglet (sessionStorage).
   apiKey = sessionStorage.getItem('mf_key') ?? '';
@@ -33,22 +41,31 @@ export class MeteoComponent implements OnInit, OnDestroy {
   };
   indicatorParams: Record<string, unknown> = {};
 
-  current: Job | null = null;
-  err = '';
   private poll: ReturnType<typeof setInterval> | null = null;
 
   ngOnInit(): void {
-    this.api.getMeteoOptions().subscribe((o) => (this.options = o));
+    this.loadOptions();
     this.reloadJobs();
   }
   ngOnDestroy(): void { this.stopPoll(); }
 
-  reloadJobs(): void { this.api.getJobs().subscribe((j) => (this.jobs = j)); }
+  /** Séparé de ngOnInit pour être rejouable depuis le bouton "Réessayer". */
+  loadOptions(): void {
+    this.optionsError.set(false);
+    this.api.getMeteoOptions().subscribe({
+      next: (o) => this.options.set(o),
+      error: () => this.optionsError.set(true),
+    });
+  }
+
+  reloadJobs(): void {
+    this.api.getJobs().subscribe({ next: (j) => this.jobs.set(j), error: () => {} });
+  }
 
   saveKey(): void { sessionStorage.setItem('mf_key', this.apiKey); }
 
   get indicatorParamDefs(): OpParam[] {
-    return this.options?.indicators.find((i) => i.name === this.form.indicator)?.params ?? [];
+    return this.options()?.indicators.find((i) => i.name === this.form.indicator)?.params ?? [];
   }
   onIndicatorChange(): void {
     this.indicatorParams = {};
@@ -56,8 +73,8 @@ export class MeteoComponent implements OnInit, OnDestroy {
   }
 
   launch(): void {
-    this.err = '';
-    if (!this.apiKey) { this.err = 'Saisissez votre clé API Météo-France.'; return; }
+    this.err.set('');
+    if (!this.apiKey) { this.err.set('Saisissez votre clé API Météo-France.'); return; }
     this.saveKey();
     this.api.launchMeteoJob(this.apiKey, {
       grandeur: this.form.grandeur,
@@ -69,8 +86,8 @@ export class MeteoComponent implements OnInit, OnDestroy {
       ramp: this.form.ramp,
       max_stations: this.form.max_stations,
     }).subscribe({
-      next: (job) => { this.current = job; this.reloadJobs(); this.startPoll(job.id); },
-      error: (e) => { this.err = e?.error?.detail ?? 'Échec du lancement.'; },
+      next: (job) => { this.current.set(job); this.reloadJobs(); this.startPoll(job.id); },
+      error: (e) => { this.err.set(e?.error?.detail ?? 'Échec du lancement.'); },
     });
   }
 
@@ -78,7 +95,7 @@ export class MeteoComponent implements OnInit, OnDestroy {
     this.stopPoll();
     this.poll = setInterval(() => {
       this.api.getJob(id).subscribe((job) => {
-        this.current = job;
+        this.current.set(job);
         if (job.status === 'DONE' || job.status === 'ERROR') {
           this.stopPoll();
           this.reloadJobs();

@@ -267,3 +267,74 @@ def _spatial_join(cur, out, ins, params):
         "WHERE a.layer_id=%s",
         [out, ins[1].id, ins[0].id],
     )
+
+
+# Cardinalité maximale du champ de catégorie : au-delà, un champ à forte
+# cardinalité (ex. identifiant quasi-unique) générerait des centaines
+# d'attributs par polygone — mieux vaut échouer clairement qu'en silence.
+MAX_TABULATE_CATEGORIES = 50
+
+
+@operation('tabulate_intersection', 'Tableau croisé de surfaces (par catégorie)',
+           "Pour chaque polygone de la 1re couche, ajoute un attribut par valeur distincte du "
+           "champ choisi de la 2e couche, valant la surface (m², géodésique) d'intersection "
+           "avec les entités de cette catégorie.",
+           2, [
+               {'name': 'field', 'type': 'text', 'label': 'Champ de catégorie (2e couche)'},
+               {'name': 'prefix', 'type': 'text', 'label': 'Préfixe des attributs', 'default': ''},
+           ])
+def _tabulate_intersection(cur, out, ins, params):
+    field = str(params.get('field', '')).strip()
+    prefix = str(params.get('prefix', ''))
+    if not field:
+        raise ProcessingError("Paramètre 'field' requis (champ de catégorie de la 2e couche).")
+
+    cur.execute(
+        "SELECT DISTINCT properties->>%s FROM features "
+        "WHERE layer_id=%s AND properties->>%s IS NOT NULL",
+        [field, ins[1].id, field],
+    )
+    values = [r[0] for r in cur.fetchall()]
+    if not values:
+        raise ProcessingError(f"Aucune valeur trouvée pour le champ « {field} » dans la 2e couche.")
+    if len(values) > MAX_TABULATE_CATEGORIES:
+        raise ProcessingError(
+            f"Le champ « {field} » a {len(values)} valeurs distinctes "
+            f"(max {MAX_TABULATE_CATEGORIES}) — choisissez un champ moins fin."
+        )
+
+    # Optimisation : sans filtrage, il faudrait appeler ST_Intersection (coûteux)
+    # sur TOUTES les paires (polygone de la 1re couche × union de catégorie), y
+    # compris celles dont les emprises ne se touchent même pas. `hits` ne visite
+    # que les paires dont les bbox se recoupent (`&&`, exploite l'index GiST de
+    # features.geom — vérifié via EXPLAIN) et confirmé par `ST_Intersects`,
+    # avant de calculer l'aire exacte. `all_pairs` reste nécessaire pour garantir
+    # un attribut à 0 (et non absent) sur les catégories sans recouvrement, mais
+    # ne manipule que des (id, texte) — aucune géométrie, donc peu coûteux même
+    # à grande échelle.
+    cur.execute(
+        "WITH cats AS ("
+        "  SELECT DISTINCT properties->>%(field)s AS val FROM features "
+        "  WHERE layer_id=%(l2)s AND properties->>%(field)s IS NOT NULL"
+        "), unions AS ("
+        "  SELECT c.val, ST_Union(f.geom) AS geom FROM cats c "
+        "  JOIN features f ON f.layer_id=%(l2)s AND f.properties->>%(field)s = c.val "
+        "  GROUP BY c.val"
+        "), hits AS ("
+        "  SELECT l1.id AS fid, u.val, "
+        "    ST_Area(ST_CollectionExtract(ST_Intersection(l1.geom, u.geom), 3)::geography) AS area "
+        "  FROM features l1 "
+        "  JOIN unions u ON l1.geom && u.geom AND ST_Intersects(l1.geom, u.geom) "
+        "  WHERE l1.layer_id=%(l1)s"
+        "), all_pairs AS ("
+        "  SELECT l1.id AS fid, c.val FROM features l1 CROSS JOIN cats c WHERE l1.layer_id=%(l1)s"
+        ") "
+        "INSERT INTO features (layer_id, geom, properties) "
+        "SELECT %(out)s, l1.geom, "
+        "  l1.properties || jsonb_object_agg(%(prefix)s || p.val, COALESCE(h.area, 0)) "
+        "FROM all_pairs p "
+        "JOIN features l1 ON l1.id = p.fid "
+        "LEFT JOIN hits h ON h.fid = p.fid AND h.val = p.val "
+        "GROUP BY l1.id, l1.geom, l1.properties",
+        {'field': field, 'prefix': prefix, 'l1': ins[0].id, 'l2': ins[1].id, 'out': out},
+    )
