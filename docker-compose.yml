@@ -11,37 +11,30 @@ networks:
     external: true
     name: sso-lab_sso-net
   dev-net:
+    # Réseau partagé du workspace : c'est ici que vit l'instance PostGIS
+    # partagée 'postgis' (infra/docker-compose.yml — dev-postgis), séparée de
+    # 'postgres' car cette dernière n'a pas l'extension PostGIS (image alpine,
+    # cf. infra/docker-compose.yml pour le détail). PostgreSQL n'est jamais
+    # publié sur l'hôte ni sur Internet, quelle que soit l'instance.
     external: true
     name: dev-net
   carto-net:
-    # Réseau interne privé backend <-> PostGIS. Le port PostgreSQL n'est JAMAIS
-    # publié (cf. CLAUDE.md / to_do point 5) : l'accès QGIS passera par
+    # Réseau interne privé de l'app : backend/worker <-> redis, et
+    # pg_featureserv <-> oauth2-proxy-ogc. Le port PostgreSQL n'est JAMAIS
+    # publié (cf. CLAUDE.md / to_do point 5) : l'accès QGIS passe par
     # pg_featureserv derrière Caddy + oauth2-proxy, pas par un port DB brut.
     driver: bridge
 
 volumes:
-  carto-pgdata:
+  # Fichiers rasters importés (GeoTIFF…). Déclaré 'external' pour survivre à
+  # `clean2.sh carto-lab` (down --volumes) — la base, elle, vit désormais sur
+  # l'instance PostGIS partagée (infra), dont le volume est protégé par
+  # clean2.sh comme celui de dev-postgres.
   carto-media:
+    external: true
+    name: carto-lab_carto-media
 
 services:
-
-  db:
-    image: postgis/postgis:16-3.4
-    container_name: carto-lab-db
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: "${DB_NAME:-cartodb}"
-      POSTGRES_USER: "${DB_USER:-cartouser}"
-      POSTGRES_PASSWORD: "${DB_PASSWORD}"
-    volumes:
-      - carto-pgdata:/var/lib/postgresql/data
-    networks:
-      - carto-net
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-cartouser} -d ${DB_NAME:-cartodb}"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
 
   redis:
     image: redis:7-alpine
@@ -61,8 +54,6 @@ services:
     restart: unless-stopped
     env_file: .env
     depends_on:
-      db:
-        condition: service_healthy
       redis:
         condition: service_healthy
     ports:
@@ -86,11 +77,10 @@ services:
     env_file: .env
     command: celery -A config worker --loglevel=info --concurrency=2
     depends_on:
-      db:
-        condition: service_healthy
       redis:
         condition: service_healthy
     networks:
+      - dev-net   # pour atteindre l'instance PostGIS partagée (postgis:5432)
       - carto-net
     volumes:
       - carto-media:/app/media
@@ -121,16 +111,17 @@ services:
     container_name: carto-lab-pgfs
     restart: unless-stopped
     environment:
-      DATABASE_URL: "postgres://${CARTO_READER_USER:-carto_reader}:${CARTO_READER_PASSWORD}@db:5432/${DB_NAME:-cartodb}"
+      # 'postgis' = instance PostGIS partagée (infra/docker-compose.yml,
+      # réseau dev-net). Le rôle carto_reader y est scopé au seul schéma
+      # carto_public (cf. migration 0006_reader_role.py).
+      DATABASE_URL: "postgres://${CARTO_READER_USER:-carto_reader}:${CARTO_READER_PASSWORD}@postgis:5432/${POSTGIS_DB:-gisdb}"
       # URL publique externe → liens HATEOAS corrects derrière Caddy + oauth2-proxy.
       PGFS_SERVER_URLBASE: "https://${DOMAIN}/${OGC_SERVICE_PATH:-carto-ogc}"
       PGFS_PAGING_LIMITDEFAULT: "1000"
       PGFS_PAGING_LIMITMAX: "50000"
-    depends_on:
-      db:
-        condition: service_healthy
     networks:
-      - carto-net
+      - dev-net   # pour atteindre l'instance PostGIS partagée (postgis:5432)
+      - carto-net # pour rester joignable par oauth2-proxy-ogc
 
   # ──────────────────────────────────────────────────────────────────────────
   # oauth2-proxy devant pg_featureserv — même cloisonnement que code-server :

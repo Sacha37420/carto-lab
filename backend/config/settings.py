@@ -39,17 +39,21 @@ ROOT_URLCONF = 'config.urls'
 WSGI_APPLICATION = 'config.wsgi.application'
 
 # ── Base de données ────────────────────────────────────────────────────────────
+# Instance PostGIS partagée du lab ('postgis' / dev-postgis, infra/docker-compose.yml),
+# PAS l'instance 'postgres' partagée par les autres apps (pas de PostGIS dessus).
+# Mot de passe sous POSTGIS_PASSWORD : clé distincte de DB_PASSWORD pour que
+# reset_url.sh la propage sans jamais interférer avec les apps sur 'postgres'.
 _DB_SCHEMA = config('DB_SCHEMA', default='carto_lab')
 
 DATABASES = {
     'default': {
         # PostGIS : moteur spatial GeoDjango (superset du backend postgresql).
         'ENGINE': 'django.contrib.gis.db.backends.postgis',
-        'HOST':     config('DB_HOST',     default='carto-lab-db'),
+        'HOST':     config('DB_HOST',     default='postgis'),
         'PORT':     config('DB_PORT',     default=5432, cast=int),
-        'NAME':     config('DB_NAME',     default='cartodb'),
-        'USER':     config('DB_USER',     default='cartouser'),
-        'PASSWORD': config('DB_PASSWORD', default='devpassword'),
+        'NAME':     config('DB_NAME',     default='gisdb'),
+        'USER':     config('DB_USER',     default='gisuser'),
+        'PASSWORD': config('POSTGIS_PASSWORD', default='devpassword'),
         'OPTIONS': {
             # Tables applicatives isolées dans le schéma dédié ; public en second
             # pour l'extension PostGIS (types/fonctions ST_*) et le schéma carto_public.
