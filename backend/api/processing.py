@@ -13,7 +13,7 @@ concaténés) ; seuls les noms d'opérations du registre sont exécutables.
 """
 from django.db import connection, transaction
 
-from .models import Layer
+from .models import Feature, Layer
 
 
 class ProcessingError(Exception):
@@ -105,6 +105,11 @@ def run_operation(name: str, input_layers: list[Layer], params: dict,
             with connection.cursor() as cur:
                 op['func'](cur, out.id, input_layers, params)
                 _finalize(cur, out)
+                # Une opération peut avoir modifié `out` en base par un autre
+                # chemin que cet objet Python (ex. polygonize corrige srid_source
+                # via une requête directe) : on relit avant de renvoyer l'objet,
+                # pour que l'appelant (réponse API) ne voie jamais un état périmé.
+                out.refresh_from_db()
     except ProcessingError:
         out.delete()
         raise
@@ -338,3 +343,58 @@ def _tabulate_intersection(cur, out, ins, params):
         "GROUP BY l1.id, l1.geom, l1.properties",
         {'field': field, 'prefix': prefix, 'l1': ins[0].id, 'l2': ins[1].id, 'out': out},
     )
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Raster → vecteur
+# ──────────────────────────────────────────────────────────────────────────────
+@operation('polygonize', 'Vectorisation (raster → polygones)',
+           "Convertit une couche raster en polygones : chaque zone de pixels contigus de "
+           "même valeur devient un polygone, la valeur du pixel étant reportée dans "
+           "l'attribut 'value'. Les pixels nodata sont ignorés.",
+           1, [
+               {'name': 'band', 'type': 'number', 'label': 'Bande (1-indexée)', 'default': 1},
+           ], 'Polygon')
+def _polygonize(cur, out, ins, params):
+    layer = ins[0]
+    if layer.layer_type != Layer.RASTER or not layer.raster_file:
+        raise ProcessingError("La vectorisation attend une couche raster en entrée.")
+
+    band = int(params.get('band', 1) or 1)
+
+    # Imports tardifs : rasterio/GDAL ne sont nécessaires qu'à cette opération
+    # (cf. geo.py, même convention pour l'import raster).
+    import json
+
+    import rasterio
+    from django.contrib.gis.geos import GEOSGeometry
+    from rasterio.features import shapes
+
+    with rasterio.open(layer.raster_file.path) as src:
+        if band < 1 or band > src.count:
+            raise ProcessingError(f"Bande {band} invalide (la couche en a {src.count}).")
+        arr = src.read(band)
+        mask = (arr != src.nodata) if src.nodata is not None else None
+        src_epsg = src.crs.to_epsg() if src.crs else None
+        shapes_gen = list(shapes(arr, mask=mask, transform=src.transform))
+
+    if not shapes_gen:
+        raise ProcessingError("Aucun polygone produit (raster vide ou entièrement nodata).")
+
+    feats = []
+    for geom, value in shapes_gen:
+        # GEOSGeometry suppose le GeoJSON en 4326 (RFC 7946) et refuse un srid=
+        # explicite en conflit — on construit donc sans, puis on ré-étiquette avec
+        # le vrai CRS source (les coordonnées de shapes() sont dans ses unités,
+        # pas en degrés) avant de reprojeter.
+        g = GEOSGeometry(json.dumps(geom))
+        g.srid = src_epsg or 4326
+        if g.srid != 4326:
+            g.transform(4326)
+        feats.append(Feature(layer_id=out, geom=g, properties={'value': float(value)}))
+    Feature.objects.bulk_create(feats, batch_size=1000)
+
+    # Trace la vraie provenance (CRS du raster source) plutôt que le 4326 par
+    # défaut posé par run_operation pour les opérations purement vectorielles.
+    if src_epsg:
+        Layer.objects.filter(pk=out).update(srid_source=src_epsg)
