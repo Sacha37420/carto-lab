@@ -3,7 +3,6 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 
-import { NavbarComponent } from '../../shared/navbar/navbar.component';
 import {
   ApiService, LayerMeta, Operation, Recipe, RecipeStep,
 } from '../../core/api.service';
@@ -13,7 +12,7 @@ interface InputOption { value: string; label: string; }
 @Component({
   selector: 'app-processing',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, NavbarComponent],
+  imports: [CommonModule, FormsModule, RouterLink],
   templateUrl: './processing.component.html',
   styleUrl: './processing.component.scss',
 })

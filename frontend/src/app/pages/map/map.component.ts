@@ -19,7 +19,6 @@ import type Feature from 'ol/Feature';
 import type { FeatureLike } from 'ol/Feature';
 import type { StyleFunction } from 'ol/style/Style';
 
-import { NavbarComponent } from '../../shared/navbar/navbar.component';
 import { ApiService, CrsInfo, LayerMeta, PublishInfo } from '../../core/api.service';
 import { DISPLAY_CRS, registerProjections } from '../../core/projections';
 
@@ -37,7 +36,7 @@ const PALETTE = ['#2563eb', '#dc2626', '#16a34a', '#d97706', '#7c3aed', '#0891b2
 @Component({
   selector: 'app-map',
   standalone: true,
-  imports: [CommonModule, FormsModule, NavbarComponent],
+  imports: [CommonModule, FormsModule],
   templateUrl: './map.component.html',
   styleUrl: './map.component.scss',
 })

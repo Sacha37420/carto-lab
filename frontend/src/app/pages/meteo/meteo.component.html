@@ -1,5 +1,3 @@
-<app-navbar></app-navbar>
-
 <div class="meteo-page">
   <h2>Cartographie Météo-France</h2>
   <p class="lead">
@@ -21,9 +19,17 @@
     <section class="card" *ngIf="options() as opts">
       <h3>Paramètres</h3>
 
-      <label>Clé API Météo-France <span class="sec">(header uniquement — jamais stockée en base)</span></label>
+      <label>Identifiant Météo-France
+        <span class="sec">(chaîne Basic du portail, mémorisée dans ce navigateur — jamais stockée en base)</span>
+      </label>
+      <p class="hint">
+        Sur le portail Météo-France, copiez la valeur après <code>Authorization: Basic</code>
+        dans l'exemple curl de génération de jeton (<code>POST /token</code>) —
+        <strong>pas</strong> le jeton lui-même, qui expire au bout d'1h. L'application se
+        charge d'échanger cet identifiant contre un jeton à chaque lancement.
+      </p>
       <input type="password" [(ngModel)]="apiKey" (blur)="saveKey()"
-             placeholder="Votre clé DPClim" autocomplete="off" />
+             placeholder="Identifiant Basic (client_id:client_secret encodé)" autocomplete="off" />
 
       <label>Grandeur</label>
       <select [(ngModel)]="form.grandeur">
@@ -66,6 +72,34 @@
         <div>
           <label>Max stations <span class="sec">(démo)</span></label>
           <input type="number" [(ngModel)]="form.max_stations" min="1" placeholder="toutes" />
+        </div>
+      </div>
+
+      <h3 class="mt">Seuils de qualité <span class="sec">(optionnel)</span></h3>
+      <p class="hint">
+        Une station qui ne respecte pas un seuil reste affichée en couche ponctuelle
+        (avec ses métriques de qualité) mais est exclue du calcul de la choroplèthe.
+        Champ vide = pas de seuil.
+      </p>
+      <div class="two">
+        <div>
+          <label>Complétude min. <span class="sec">(0–1, ex. 0.9 = 90 %)</span></label>
+          <input type="number" [(ngModel)]="qualityForm.min_completeness"
+                 min="0" max="1" step="0.05" placeholder="aucun seuil" />
+        </div>
+        <div>
+          <label>Trou max <span class="sec">(heures)</span></label>
+          <input type="number" [(ngModel)]="qualityForm.max_gap_hours" min="0" placeholder="aucun seuil" />
+        </div>
+      </div>
+      <div class="two">
+        <div>
+          <label>Relevés max au même datetime</label>
+          <input type="number" [(ngModel)]="qualityForm.max_same_datetime" min="0" placeholder="aucun seuil" />
+        </div>
+        <div>
+          <label>Duplicatas de datetime max</label>
+          <input type="number" [(ngModel)]="qualityForm.max_duplicates" min="0" placeholder="aucun seuil" />
         </div>
       </div>
 

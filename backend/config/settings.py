@@ -88,6 +88,20 @@ METEOFRANCE_BASE_URL = config(
     'METEOFRANCE_BASE_URL',
     default='https://public-api.meteofrance.fr/public/DPClim/v1',
 )
+# Portail OAuth2 : échange l'identifiant applicatif (Basic client_id:client_secret)
+# contre un jeton d'accès Bearer de courte durée (~1h). DPClim n'accepte QUE ce
+# jeton en Authorization: Bearer — jamais l'identifiant applicatif directement,
+# et jamais en header `apikey` (vérifié en direct, cf. meteo_client.py).
+METEOFRANCE_TOKEN_URL = config(
+    'METEOFRANCE_TOKEN_URL',
+    default='https://portail-api.meteofrance.fr/token',
+)
+# Espacement minimal (secondes) entre deux appels DPClim consécutifs. Vérifié en
+# direct : ~58 appels rapprochés déclenchent un 429 (throttling WSO2), qui impose
+# ensuite une pénalité d'attente (~45s-1min observées) avant de pouvoir rappeler —
+# largement plus coûteuse que l'espacement régulier qui évite de la déclencher.
+# 1.2s ≈ 50 req/min, sous le seuil observé (~58-60/min) avec marge de sécurité.
+METEOFRANCE_MIN_INTERVAL = config('METEOFRANCE_MIN_INTERVAL', default=1.2, cast=float)
 
 # ── Publication OGC API – Features / QGIS (Lot 4) ──────────────────────────────
 # Schéma dédié aux couches publiables + rôle Postgres read-only strictement scopé.

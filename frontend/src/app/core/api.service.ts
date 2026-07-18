@@ -97,6 +97,13 @@ export interface PublishInfo {
   qgis_steps?: string[];
 }
 
+export interface MeteoQualityThresholds {
+  min_completeness?: number | null;
+  max_gap_hours?: number | null;
+  max_same_datetime?: number | null;
+  max_duplicates?: number | null;
+}
+
 export interface MeteoJobRequest {
   grandeur: string;
   year: number;
@@ -106,6 +113,7 @@ export interface MeteoJobRequest {
   n_classes?: number;
   ramp?: string;
   max_stations?: number | null;
+  quality_thresholds?: MeteoQualityThresholds;
 }
 
 @Injectable({ providedIn: 'root' })

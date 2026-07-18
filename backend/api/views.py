@@ -387,7 +387,7 @@ class MeteoJobLaunchView(APIView):
     La clé API est fournie dans le header `X-Meteo-Key` (jamais dans le corps, jamais
     persistée) et déposée en Redis éphémère ; seul un jeton transite vers le worker.
     Corps : { grandeur, year, indicator, indicator_params?, classification?, n_classes?,
-              ramp?, max_stations? }
+              ramp?, max_stations?, quality_thresholds? }
     """
 
     def post(self, request):
@@ -414,6 +414,7 @@ class MeteoJobLaunchView(APIView):
             'n_classes': int(d.get('n_classes', 5)),
             'ramp': d.get('ramp', 'YlOrRd'),
             'max_stations': d.get('max_stations'),
+            'quality_thresholds': d.get('quality_thresholds', {}),
         }
         job = Job.objects.create(
             kind='meteofrance', status=Job.PENDING, params=params,

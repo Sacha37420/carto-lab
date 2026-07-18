@@ -1,7 +1,6 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
-import { NavbarComponent } from '../../shared/navbar/navbar.component';
-import { ApiService }      from '../../core/api.service';
+import { ApiService } from '../../core/api.service';
 
 interface Department {
   id: number; name: string; description: string; member_count: number;
@@ -22,7 +21,7 @@ interface MeResponse {
 @Component({
   selector: 'app-profile',
   standalone: true,
-  imports: [DatePipe, NavbarComponent],
+  imports: [DatePipe],
   templateUrl: './profile.component.html',
   styleUrl: './profile.component.scss',
 })

@@ -3,13 +3,12 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 
-import { NavbarComponent } from '../../shared/navbar/navbar.component';
-import { ApiService, Job, MeteoOptions, OpParam } from '../../core/api.service';
+import { ApiService, Job, MeteoOptions, MeteoQualityThresholds, OpParam } from '../../core/api.service';
 
 @Component({
   selector: 'app-meteo',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, NavbarComponent],
+  imports: [CommonModule, FormsModule, RouterLink],
   templateUrl: './meteo.component.html',
   styleUrl: './meteo.component.scss',
 })
@@ -27,8 +26,14 @@ export class MeteoComponent implements OnInit, OnDestroy {
   current = signal<Job | null>(null);
   err = signal('');
 
-  // La clé n'est conservée que le temps de la session onglet (sessionStorage).
-  apiKey = sessionStorage.getItem('mf_key') ?? '';
+  // Identifiant applicatif Météo-France (chaîne Basic du portail, PAS un jeton
+  // Bearer déjà émis — celui-ci expire en 1h). Conservé dans le navigateur
+  // (localStorage) pour éviter à l'utilisateur de le ressaisir à chaque session.
+  // Ne part jamais vers le backend hors du header X-Meteo-Key d'un lancement, et
+  // n'est jamais persisté côté serveur (cf. secret_store.py — jeton Redis
+  // éphémère ; l'échange contre un jeton Bearer se fait côté worker Celery, cf.
+  // meteo_client.fetch_access_token).
+  apiKey = localStorage.getItem('mf_key') ?? '';
 
   form = {
     grandeur: 'temperature',
@@ -40,6 +45,16 @@ export class MeteoComponent implements OnInit, OnDestroy {
     max_stations: 50 as number | null,
   };
   indicatorParams: Record<string, unknown> = {};
+
+  // Seuils de qualité (laisser vide = pas de seuil). N'affectent que le passage
+  // couche ponctuelle → choroplèthe : les stations exclues restent visibles en
+  // points, avec leurs métriques de qualité (cf. tasks.py / meteo_pipeline.py).
+  qualityForm: Required<MeteoQualityThresholds> = {
+    min_completeness: null,
+    max_gap_hours: null,
+    max_same_datetime: null,
+    max_duplicates: null,
+  };
 
   private poll: ReturnType<typeof setInterval> | null = null;
 
@@ -62,7 +77,7 @@ export class MeteoComponent implements OnInit, OnDestroy {
     this.api.getJobs().subscribe({ next: (j) => this.jobs.set(j), error: () => {} });
   }
 
-  saveKey(): void { sessionStorage.setItem('mf_key', this.apiKey); }
+  saveKey(): void { localStorage.setItem('mf_key', this.apiKey); }
 
   get indicatorParamDefs(): OpParam[] {
     return this.options()?.indicators.find((i) => i.name === this.form.indicator)?.params ?? [];
@@ -85,6 +100,7 @@ export class MeteoComponent implements OnInit, OnDestroy {
       n_classes: this.form.n_classes,
       ramp: this.form.ramp,
       max_stations: this.form.max_stations,
+      quality_thresholds: { ...this.qualityForm },
     }).subscribe({
       next: (job) => { this.current.set(job); this.reloadJobs(); this.startPoll(job.id); },
       error: (e) => { this.err.set(e?.error?.detail ?? 'Échec du lancement.'); },
