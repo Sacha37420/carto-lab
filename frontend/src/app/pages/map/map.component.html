@@ -1,6 +1,18 @@
 <div class="map-page">
+  <!-- ── Bascule mobile : le panneau est un tiroir replié par défaut < 900px ── -->
+  <button
+    class="panel-toggle"
+    type="button"
+    (click)="togglePanel()"
+    [attr.aria-expanded]="panelOpen()"
+    aria-label="Afficher ou masquer le panneau des couches"
+  >
+    <span class="panel-toggle-icon">{{ panelOpen() ? '✕' : '☰' }}</span>
+    <span>{{ panelOpen() ? 'Fermer' : 'Couches' }}</span>
+  </button>
+
   <!-- ── Panneau latéral ─────────────────────────────────────────────── -->
-  <aside class="panel">
+  <aside class="panel" [class.open]="panelOpen()">
     <section class="block">
       <h3>Importer une couche</h3>
       <input type="file" (change)="onFile($event)"

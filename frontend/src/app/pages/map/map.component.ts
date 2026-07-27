@@ -75,6 +75,9 @@ export class MapComponent implements AfterViewInit, OnDestroy {
   error = signal('');
   tpResult = signal<{ x: number; y: number; srid: number } | null>(null);
 
+  /** Panneau des couches : replié par défaut sur mobile (< 900px, cf. map.component.scss). */
+  panelOpen = signal(false);
+
   crsList: CrsInfo[] = [];
   displayCrsOptions = DISPLAY_CRS;
   displayCrs = 3857;
@@ -115,6 +118,10 @@ export class MapComponent implements AfterViewInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.map?.setTarget(undefined);
+  }
+
+  togglePanel(): void {
+    this.panelOpen.update((v) => !v);
   }
 
   private round(n: number): number {
