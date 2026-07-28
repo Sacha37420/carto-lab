@@ -21,6 +21,7 @@ import type { StyleFunction } from 'ol/style/Style';
 
 import { ApiService, CrsInfo, LayerMeta, PublishInfo } from '../../core/api.service';
 import { DISPLAY_CRS, registerProjections } from '../../core/projections';
+import { TopbarActionsService } from '../../core/topbar-actions.service';
 
 interface LegendEntry { min: number; max: number; color: string; }
 
@@ -42,6 +43,7 @@ const PALETTE = ['#2563eb', '#dc2626', '#16a34a', '#d97706', '#7c3aed', '#0891b2
 })
 export class MapComponent implements AfterViewInit, OnDestroy {
   private api = inject(ApiService);
+  private topbarActions = inject(TopbarActionsService);
 
   @ViewChild('mapEl', { static: true }) mapEl!: ElementRef<HTMLDivElement>;
   @ViewChild('popupEl', { static: true }) popupEl!: ElementRef<HTMLDivElement>;
@@ -114,10 +116,20 @@ export class MapComponent implements AfterViewInit, OnDestroy {
 
     this.loadLayers();
     this.api.getCommonCrs().subscribe((l) => (this.crsList = l));
+
+    // Bouton mobile du panneau des couches : rendu dans la topbar de l'app
+    // (à côté du burger de navigation), pas flottant sur la carte.
+    this.topbarActions.set({
+      label: () => (this.panelOpen() ? 'Fermer le panneau des couches' : 'Afficher le panneau des couches'),
+      icon: () => (this.panelOpen() ? '✕' : '▤'),
+      expanded: () => this.panelOpen(),
+      onClick: () => this.togglePanel(),
+    });
   }
 
   ngOnDestroy(): void {
     this.map?.setTarget(undefined);
+    this.topbarActions.clear();
   }
 
   togglePanel(): void {

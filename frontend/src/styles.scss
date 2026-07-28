@@ -1,3 +1,12 @@
+/* ─── OpenLayers ─────────────────────────────────────────────────────────
+   Import volontairement ici et pas dans map.component.scss : OpenLayers crée
+   ses contrôles (zoom, attribution) en DOM brut, hors du template Angular —
+   un import scopé au composant recevrait un attribut [_ngcontent-*] que ces
+   éléments ne porteront jamais, et ne les stylerait donc jamais. Le thème
+   (couleurs) et la taille tactile mobile sont resurchargés dans
+   map.component.scss via ::ng-deep. ──────────────────────────────────────── */
+@import 'ol/ol.css';
+
 /* ─── Foyer — polices (self-hosted, jamais de CDN) ──────────────────────── */
 @font-face { font-family: "Foyer UI"; font-weight: 400; font-style: normal; font-display: swap;
   src: url("/assets/fonts/inter-latin-400-normal.woff2") format("woff2"); }

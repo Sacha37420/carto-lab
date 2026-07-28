@@ -67,6 +67,17 @@
           [attr.aria-label]="theme.theme() === 'dark' ? 'Passer en thème clair' : 'Passer en thème sombre'"
         >{{ theme.theme() === 'dark' ? '☀' : '☾' }}</button>
 
+        @if (topbarActions.action(); as pageAction) {
+          <button
+            class="icon-btn"
+            type="button"
+            (click)="pageAction.onClick()"
+            [attr.aria-expanded]="pageAction.expanded()"
+            [attr.aria-label]="pageAction.label()"
+            [title]="pageAction.label()"
+          >{{ pageAction.icon() }}</button>
+        }
+
         <button
           #burgerBtn
           class="burger"

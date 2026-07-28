@@ -1,17 +1,6 @@
 <div class="map-page">
-  <!-- ── Bascule mobile : le panneau est un tiroir replié par défaut < 900px ── -->
-  <button
-    class="panel-toggle"
-    type="button"
-    (click)="togglePanel()"
-    [attr.aria-expanded]="panelOpen()"
-    aria-label="Afficher ou masquer le panneau des couches"
-  >
-    <span class="panel-toggle-icon">{{ panelOpen() ? '✕' : '☰' }}</span>
-    <span>{{ panelOpen() ? 'Fermer' : 'Couches' }}</span>
-  </button>
-
-  <!-- ── Panneau latéral ─────────────────────────────────────────────── -->
+  <!-- ── Panneau latéral : tiroir replié par défaut < 900px, bascule dans la
+       topbar de l'app (à côté du burger de navigation) — voir app.html. ── -->
   <aside class="panel" [class.open]="panelOpen()">
     <section class="block">
       <h3>Importer une couche</h3>

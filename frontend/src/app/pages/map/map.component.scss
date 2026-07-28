@@ -1,4 +1,5 @@
-@import 'ol/ol.css';
+// ol.css est importé globalement dans styles.scss, volontairement pas ici :
+// voir la note à ce sujet dans ce fichier.
 
 .map-page {
   display: flex;
@@ -18,34 +19,9 @@
   border-right: 1px solid var(--border);
 }
 
-.panel-toggle { display: none; }
-
 // ── Mobile (< 900px) : le panneau devient un tiroir replié par défaut, sinon
 // il occupe la quasi-totalité de l'écran et ne laisse presque plus voir la carte.
 @media (max-width: 899px) {
-  .panel-toggle {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    position: absolute;
-    top: var(--space-3);
-    left: var(--space-3);
-    z-index: 30;
-    height: 40px;
-    padding: 0 var(--space-3);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-full);
-    background: var(--card);
-    color: var(--text);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
-    cursor: pointer;
-    font-family: var(--font-ui);
-    font-size: var(--text-sm);
-    font-weight: 600;
-  }
-
-  .panel-toggle-icon { font-family: var(--font-mono); }
-
   .panel {
     position: fixed;
     top: var(--nav-h);
@@ -243,6 +219,32 @@
 
 .map-wrap { flex: 1; position: relative; }
 .map { width: 100%; height: 100%; }
+
+// ── Contrôles OpenLayers (zoom, attribution) ────────────────────────────────
+// OpenLayers crée ces boutons en DOM brut (pas via le template Angular) : un
+// import d'ol.css scopé à ce composant ne les stylerait jamais, l'encapsulation
+// de vue leur ajouterait un attribut qu'ils ne porteront jamais — c'est pour
+// ça qu'ol.css est importé globalement (styles.scss). Ici, ::ng-deep permet
+// de resurcharger seulement le thème (tokens Foyer au lieu du gris figé
+// d'ol.css) et, sur mobile, la taille des boutons pour un tactile confortable.
+:host ::ng-deep .ol-control {
+  --ol-background-color: var(--card);
+  --ol-accent-background-color: var(--accent-tint);
+  --ol-subtle-background-color: var(--border);
+  --ol-partial-background-color: var(--card);
+  --ol-foreground-color: var(--text);
+  --ol-subtle-foreground-color: var(--text-mute);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+}
+
+@media (max-width: 899px) {
+  :host ::ng-deep .ol-control button {
+    width: 40px;
+    height: 40px;
+    line-height: 40px;
+    font-size: var(--text-lg);
+  }
+}
 
 /* Légende(s) choroplèthe — les couleurs des entrées sont pilotées par les
    données (métadonnées de couche), pas par la charte Foyer : ne pas les

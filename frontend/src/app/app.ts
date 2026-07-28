@@ -3,6 +3,7 @@ import { NgTemplateOutlet } from '@angular/common';
 import { RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
 import { KeycloakService } from './core/keycloak.service';
 import { ThemeService } from './core/theme.service';
+import { TopbarActionsService } from './core/topbar-actions.service';
 
 interface NavItem {
   label: string;
@@ -23,6 +24,7 @@ const MOBILE_CLOSE_ANIM_MS = 220;
 export class AppComponent {
   protected kc = inject(KeycloakService);
   protected theme = inject(ThemeService);
+  protected topbarActions = inject(TopbarActionsService);
 
   collapsed = signal(false);
   mobileOpen = signal(false);
