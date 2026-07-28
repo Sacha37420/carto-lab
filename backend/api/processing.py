@@ -11,6 +11,8 @@ Features), réutilisable comme entrée d'un autre traitement (cf. recettes).
 Sécurité : les identifiants de couche sont passés en paramètres liés (jamais
 concaténés) ; seuls les noms d'opérations du registre sont exécutables.
 """
+import contextvars
+
 from django.db import connection, transaction
 
 from .models import Feature, Layer
@@ -18,6 +20,16 @@ from .models import Feature, Layer
 
 class ProcessingError(Exception):
     """Erreur fonctionnelle d'un traitement (message destiné à l'utilisateur)."""
+
+
+# Token Authorization de la requête en cours, pour les opérations qui doivent
+# lire un raster depuis storage (aujourd'hui : _polygonize uniquement). Un
+# contextvar plutôt qu'un champ dans `params` : `params` est persisté tel quel
+# dans Layer.metadata (JSONField exposé publiquement par LayerSerializer) —
+# y stocker le Bearer token le ferait fuiter via l'API.
+_auth_header_var: contextvars.ContextVar[str] = contextvars.ContextVar(
+    'carto_auth_header', default='',
+)
 
 
 # Registre rempli par le décorateur @operation.
@@ -81,7 +93,7 @@ def _finalize(cur, layer: Layer):
 
 
 def run_operation(name: str, input_layers: list[Layer], params: dict,
-                  out_name: str = '', owner_email: str = '') -> Layer:
+                  out_name: str = '', owner_email: str = '', auth_header: str = '') -> Layer:
     """Exécute une opération et renvoie la nouvelle couche."""
     op = OPERATIONS.get(name)
     if op is None:
@@ -100,6 +112,7 @@ def run_operation(name: str, input_layers: list[Layer], params: dict,
         owner_email=owner_email,
         metadata={'operation': name, 'inputs': [l.id for l in input_layers], 'params': params},
     )
+    token = _auth_header_var.set(auth_header)
     try:
         with transaction.atomic():
             with connection.cursor() as cur:
@@ -116,6 +129,8 @@ def run_operation(name: str, input_layers: list[Layer], params: dict,
     except Exception as exc:  # SQL/PostGIS
         out.delete()
         raise ProcessingError(f"Échec du traitement : {exc}") from exc
+    finally:
+        _auth_header_var.reset(token)
     return out
 
 
@@ -357,7 +372,7 @@ def _tabulate_intersection(cur, out, ins, params):
            ], 'Polygon')
 def _polygonize(cur, out, ins, params):
     layer = ins[0]
-    if layer.layer_type != Layer.RASTER or not layer.raster_file:
+    if layer.layer_type != Layer.RASTER or not layer.raster_path:
         raise ProcessingError("La vectorisation attend une couche raster en entrée.")
 
     band = int(params.get('band', 1) or 1)
@@ -370,13 +385,19 @@ def _polygonize(cur, out, ins, params):
     from django.contrib.gis.geos import GEOSGeometry
     from rasterio.features import shapes
 
-    with rasterio.open(layer.raster_file.path) as src:
-        if band < 1 or band > src.count:
-            raise ProcessingError(f"Bande {band} invalide (la couche en a {src.count}).")
-        arr = src.read(band)
-        mask = (arr != src.nodata) if src.nodata is not None else None
-        src_epsg = src.crs.to_epsg() if src.crs else None
-        shapes_gen = list(shapes(arr, mask=mask, transform=src.transform))
+    from . import storage_client
+
+    tmp = storage_client.download_to_tempfile(_auth_header_var.get(), layer.raster_path)
+    try:
+        with rasterio.open(tmp.name) as src:
+            if band < 1 or band > src.count:
+                raise ProcessingError(f"Bande {band} invalide (la couche en a {src.count}).")
+            arr = src.read(band)
+            mask = (arr != src.nodata) if src.nodata is not None else None
+            src_epsg = src.crs.to_epsg() if src.crs else None
+            shapes_gen = list(shapes(arr, mask=mask, transform=src.transform))
+    finally:
+        tmp.close()
 
     if not shapes_gen:
         raise ProcessingError("Aucun polygone produit (raster vide ou entièrement nodata).")

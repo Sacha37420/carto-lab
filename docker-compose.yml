@@ -25,15 +25,6 @@ networks:
     # pg_featureserv derrière Caddy + oauth2-proxy, pas par un port DB brut.
     driver: bridge
 
-volumes:
-  # Fichiers rasters importés (GeoTIFF…). Déclaré 'external' pour survivre à
-  # `clean2.sh carto-lab` (down --volumes) — la base, elle, vit désormais sur
-  # l'instance PostGIS partagée (infra), dont le volume est protégé par
-  # clean2.sh comme celui de dev-postgres.
-  carto-media:
-    external: true
-    name: carto-lab_carto-media
-
 services:
 
   redis:
@@ -62,9 +53,6 @@ services:
       - sso-net
       - dev-net
       - carto-net
-    volumes:
-      # Volume nommé : persistance des fichiers importés (rasters). Pas un bind mount.
-      - carto-media:/app/media
     labels:
       caddy: "${DOMAIN}"
       caddy.handle_path: "/carto-lab-api/*"
@@ -82,8 +70,6 @@ services:
     networks:
       - dev-net   # pour atteindre l'instance PostGIS partagée (postgis:5432)
       - carto-net
-    volumes:
-      - carto-media:/app/media
 
   frontend:
     build: ./frontend

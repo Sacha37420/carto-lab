@@ -41,7 +41,10 @@ class Layer(models.Model):
     metadata = models.JSONField(default=dict, blank=True)
 
     # Raster (GeoTIFF) : conservé comme fichier + métadonnées, pas d'entités.
-    raster_file = models.FileField(upload_to='rasters/', null=True, blank=True)
+    # Chemin relatif dans le partage storage 'carto-lab' (required_groups=
+    # 'developers') — le fichier lui-même n'est plus stocké localement, cf.
+    # api/storage_client.py.
+    raster_path = models.CharField(max_length=1024, null=True, blank=True)
 
     published_qgis = models.BooleanField(default=False)
     owner_email = models.CharField(max_length=255, blank=True)

@@ -66,11 +66,14 @@ DB_SCHEMA = _DB_SCHEMA
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 USE_TZ = True
 
-# ── Médias (fichiers importés : rasters GeoTIFF…) ──────────────────────────────
-MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
-_script = FORCE_SCRIPT_NAME.rstrip('/')
-# Préfixe le chemin public par SCRIPT_NAME pour rester correct derrière Caddy.
-MEDIA_URL = f'{_script}/media/' if _script else '/media/'
+# ── Rasters (Layer.raster_path) — stockage délégué à l'app storage ─────────────
+# Les rasters ne sont plus servis localement (ancien MEDIA_ROOT/MEDIA_URL,
+# retiré — voir CLAUDE.md racine, section stockage de fichiers partagé du lab).
+# Un seul partage 'carto-lab' (required_groups='developers', même modèle
+# d'accès "carte commune" que l'app elle-même), provisionné une fois via
+# `manage.py create_group_share` côté storage — cf. api/storage_client.py.
+STORAGE_INTERNAL_URL = config('STORAGE_INTERNAL_URL', default='http://storage-backend:8000')
+STORAGE_NAMESPACE = config('STORAGE_NAMESPACE', default='carto-lab')
 
 # ── Celery / file de tâches asynchrones ────────────────────────────────────────
 CELERY_BROKER_URL = config('CELERY_BROKER_URL', default='redis://redis:6379/0')

@@ -154,7 +154,7 @@ def _parse_csv(path: str, force_srid=None):
 # ──────────────────────────────────────────────────────────────────────────────
 # Orchestration
 # ──────────────────────────────────────────────────────────────────────────────
-def import_layer(uploaded_file, name: str, force_srid=None, owner_email: str = ''):
+def import_layer(uploaded_file, name: str, force_srid=None, owner_email: str = '', auth_header: str = ''):
     """
     Importe un fichier uploadé et crée la couche + entités correspondantes.
     Retourne l'instance Layer. Lève LayerImportError en cas d'entrée invalide.
@@ -175,7 +175,7 @@ def import_layer(uploaded_file, name: str, force_srid=None, owner_email: str = '
 
     # ── Raster : persistance du fichier + métadonnées, pas d'entités ──────────
     if ext in RASTER_EXTS:
-        return _import_raster(uploaded_file, name, owner_email)
+        return _import_raster(uploaded_file, name, owner_email, auth_header)
 
     # ── Vecteur : écriture dans un tmp neutre, parsing OGR/CSV ────────────────
     with tempfile.TemporaryDirectory() as workdir:
@@ -215,7 +215,10 @@ def import_layer(uploaded_file, name: str, force_srid=None, owner_email: str = '
         return layer
 
 
-def _import_raster(uploaded_file, name: str, owner_email: str = ''):
+def _import_raster(uploaded_file, name: str, owner_email: str = '', auth_header: str = ''):
+    from uuid import uuid4
+
+    from . import storage_client
     from .models import Layer  # import tardif
 
     layer = Layer(
@@ -224,37 +227,54 @@ def _import_raster(uploaded_file, name: str, owner_email: str = ''):
         origin=Layer.ORIGIN_UPLOAD,
         owner_email=owner_email,
     )
-    # Persistance via FileField (media/rasters/…). Django gère un nom sûr.
-    layer.raster_file.save(os.path.basename(uploaded_file.name), uploaded_file, save=False)
 
-    # Métadonnées raster via rasterio (GDAL bundlé).
+    # Métadonnées raster via rasterio (GDAL bundlé) : nécessite un chemin
+    # filesystem réel, d'où l'écriture dans un fichier temporaire — réutilisé
+    # ensuite comme source de l'upload vers storage (une seule lecture du flux
+    # uploadé, jamais consommé deux fois).
     import rasterio
 
-    with rasterio.open(layer.raster_file.path) as src:
-        source_srid = None
-        if src.crs is not None:
-            try:
-                source_srid = src.crs.to_epsg()
-            except Exception:
-                source_srid = None
-        b = src.bounds
-        # Emprise reprojetée en 4326 pour l'affichage.
-        bbox = None
-        if src.crs is not None:
-            from rasterio.warp import transform_bounds
-            try:
-                bbox = list(transform_bounds(src.crs, 'EPSG:4326',
-                                             b.left, b.bottom, b.right, b.top))
-            except Exception:
-                bbox = [b.left, b.bottom, b.right, b.top]
-        layer.srid_source = source_srid
-        layer.bbox = bbox
-        layer.metadata = {
-            'source_format': 'geotiff',
-            'width': src.width,
-            'height': src.height,
-            'bands': src.count,
-            'dtypes': [str(d) for d in src.dtypes],
-        }
+    original_name = os.path.basename(uploaded_file.name)
+    suffix = os.path.splitext(original_name)[1]
+    with tempfile.NamedTemporaryFile(suffix=suffix) as tmp:
+        for chunk in uploaded_file.chunks():
+            tmp.write(chunk)
+        tmp.flush()
+
+        with rasterio.open(tmp.name) as src:
+            source_srid = None
+            if src.crs is not None:
+                try:
+                    source_srid = src.crs.to_epsg()
+                except Exception:
+                    source_srid = None
+            b = src.bounds
+            # Emprise reprojetée en 4326 pour l'affichage.
+            bbox = None
+            if src.crs is not None:
+                from rasterio.warp import transform_bounds
+                try:
+                    bbox = list(transform_bounds(src.crs, 'EPSG:4326',
+                                                 b.left, b.bottom, b.right, b.top))
+                except Exception:
+                    bbox = [b.left, b.bottom, b.right, b.top]
+            layer.srid_source = source_srid
+            layer.bbox = bbox
+            layer.metadata = {
+                'source_format': 'geotiff',
+                'width': src.width,
+                'height': src.height,
+                'bands': src.count,
+                'dtypes': [str(d) for d in src.dtypes],
+            }
+
+        tmp.seek(0)
+        relative_path = f'rasters/{uuid4().hex}-{original_name}'
+        result = storage_client.upload(
+            auth_header, relative_path, tmp, original_name,
+            getattr(uploaded_file, 'content_type', '') or 'image/tiff',
+        )
+        layer.raster_path = result['relative_path']
+
     layer.save()
     return layer

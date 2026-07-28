@@ -7,6 +7,7 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
 
 from django.contrib.gis.geos import GEOSGeometry
+from django.http import FileResponse
 from drf_spectacular.utils import extend_schema, OpenApiParameter
 
 from .models import Department, Feature, Job, Layer, Recipe, UserRecord
@@ -20,6 +21,7 @@ from . import processing
 from . import indicators as ind_mod
 from . import choropleth as choro_mod
 from . import secret_store
+from . import storage_client
 from . import publish as publish_mod
 from .tasks import build_meteo_choropleth
 
@@ -110,6 +112,7 @@ class LayersView(APIView):
             layer = import_layer(
                 uploaded, name=name, force_srid=force_srid,
                 owner_email=getattr(request.user, 'email', ''),
+                auth_header=request.headers.get('Authorization', ''),
             )
         except LayerImportError as exc:
             return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
@@ -141,8 +144,31 @@ class LayerDetailView(APIView):
         layer = self._get(pk)
         if layer is None:
             return Response(status=status.HTTP_404_NOT_FOUND)
+        if layer.raster_path:
+            storage_client.delete(request.headers.get('Authorization', ''), layer.raster_path)
         layer.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class LayerRasterView(APIView):
+    """GET /api/layers/<id>/raster/ — proxie le téléchargement du raster
+    depuis storage (accès uniforme à tout le groupe requis, cf. Share
+    required_groups='developers' — pas de filtrage par objet nécessaire ici,
+    contrairement à conciergerie/FraisViewSet.facture)."""
+
+    def get(self, request, pk):
+        try:
+            layer = Layer.objects.get(pk=pk)
+        except Layer.DoesNotExist:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        if not layer.raster_path:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        tmp = storage_client.download_to_tempfile(
+            request.headers.get('Authorization', ''), layer.raster_path,
+        )
+        filename = layer.raster_path.rsplit('/', 1)[-1]
+        response = FileResponse(tmp, content_type='image/tiff', filename=filename)
+        return response
 
 
 class LayerGeoJSONView(APIView):
@@ -268,6 +294,7 @@ class ProcessingRunView(APIView):
                 op, layers, params,
                 out_name=d.get('name', ''),
                 owner_email=getattr(request.user, 'email', ''),
+                auth_header=request.headers.get('Authorization', ''),
             )
         except processing.ProcessingError as exc:
             return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
@@ -277,7 +304,7 @@ class ProcessingRunView(APIView):
         )
 
 
-def _run_recipe(recipe: Recipe, owner_email: str) -> Layer:
+def _run_recipe(recipe: Recipe, owner_email: str, auth_header: str = '') -> Layer:
     """Exécute les étapes d'une recette dans l'ordre ; renvoie la couche finale."""
     outputs: list[Layer] = []          # sortie de chaque étape (par index)
     for i, step in enumerate(recipe.steps):
@@ -301,6 +328,7 @@ def _run_recipe(recipe: Recipe, owner_email: str) -> Layer:
             op, inputs, params,
             out_name=step.get('name', f"{recipe.name} — étape {i + 1}"),
             owner_email=owner_email,
+            auth_header=auth_header,
         )
         out.metadata = {**out.metadata, 'recipe': recipe.name, 'recipe_step': i}
         out.save(update_fields=['metadata'])
@@ -352,7 +380,10 @@ class RecipeRunView(APIView):
         except Recipe.DoesNotExist:
             return Response(status=status.HTTP_404_NOT_FOUND)
         try:
-            layer = _run_recipe(recipe, getattr(request.user, 'email', ''))
+            layer = _run_recipe(
+                recipe, getattr(request.user, 'email', ''),
+                auth_header=request.headers.get('Authorization', ''),
+            )
         except processing.ProcessingError as exc:
             return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         recipe.result_layer = layer

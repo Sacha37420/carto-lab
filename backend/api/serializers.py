@@ -1,3 +1,4 @@
+from django.urls import reverse
 from rest_framework import serializers
 from .models import Department, Job, Layer, Recipe, UserRecord
 
@@ -32,11 +33,11 @@ class LayerSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_raster_url(self, obj) -> str | None:
-        if obj.raster_file:
-            request = self.context.get('request')
-            url = obj.raster_file.url
-            return request.build_absolute_uri(url) if request else url
-        return None
+        if not obj.raster_path:
+            return None
+        request = self.context.get('request')
+        url = reverse('layer-raster', args=[obj.pk])
+        return request.build_absolute_uri(url) if request else url
 
 
 class DepartmentSerializer(serializers.ModelSerializer):
