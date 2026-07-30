@@ -1,7 +1,7 @@
 from django.urls import path
 from .views import (
     MeView, DepartmentListView, UserListView,
-    LayersView, LayerDetailView, LayerGeoJSONView, LayerRasterView,
+    LayersView, LayerDetailView, LayerGeoJSONView,
     CRSListView, TransformPointView,
     ProcessingCatalogView, ProcessingRunView,
     RecipesView, RecipeDetailView, RecipeRunView,
@@ -18,7 +18,6 @@ urlpatterns = [
     path('layers/',                 LayersView.as_view()),
     path('layers/<int:pk>/',        LayerDetailView.as_view()),
     path('layers/<int:pk>/geojson/', LayerGeoJSONView.as_view()),
-    path('layers/<int:pk>/raster/', LayerRasterView.as_view(), name='layer-raster'),
     path('layers/<int:pk>/publish/', LayerPublishView.as_view()),
 
     # ── Systèmes de coordonnées (Feature 2) ──────────────────────────────────

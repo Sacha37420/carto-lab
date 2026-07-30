@@ -7,7 +7,6 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
 
 from django.contrib.gis.geos import GEOSGeometry
-from django.http import FileResponse
 from drf_spectacular.utils import extend_schema, OpenApiParameter
 
 from .models import Department, Feature, Job, Layer, Recipe, UserRecord
@@ -148,27 +147,6 @@ class LayerDetailView(APIView):
             storage_client.delete(request.headers.get('Authorization', ''), layer.raster_path)
         layer.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
-
-
-class LayerRasterView(APIView):
-    """GET /api/layers/<id>/raster/ — proxie le téléchargement du raster
-    depuis storage (accès uniforme à tout le groupe requis, cf. Share
-    required_groups='developers' — pas de filtrage par objet nécessaire ici,
-    contrairement à conciergerie/FraisViewSet.facture)."""
-
-    def get(self, request, pk):
-        try:
-            layer = Layer.objects.get(pk=pk)
-        except Layer.DoesNotExist:
-            return Response(status=status.HTTP_404_NOT_FOUND)
-        if not layer.raster_path:
-            return Response(status=status.HTTP_404_NOT_FOUND)
-        tmp = storage_client.download_to_tempfile(
-            request.headers.get('Authorization', ''), layer.raster_path,
-        )
-        filename = layer.raster_path.rsplit('/', 1)[-1]
-        response = FileResponse(tmp, content_type='image/tiff', filename=filename)
-        return response
 
 
 class LayerGeoJSONView(APIView):

@@ -1,4 +1,4 @@
-from django.urls import reverse
+from django.conf import settings
 from rest_framework import serializers
 from .models import Department, Job, Layer, Recipe, UserRecord
 
@@ -33,11 +33,22 @@ class LayerSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_raster_url(self, obj) -> str | None:
+        """URL storage directe (pas de proxy carto-lab pour la LECTURE) : le
+        frontend l'appelle avec son propre token (`Authorization: Bearer`, cf.
+        CLAUDE.md « Verrou 2 généralisé »). Sûr sans filtrage supplémentaire ici
+        — n'importe quel membre du groupe `developers` a déjà un accès direct
+        au namespace storage `carto-lab` (`Share.required_groups='developers'`),
+        et `azp='carto-lab'` figure dans `KEYCLOAK_TRUSTED_CLIENTS` côté
+        storage. Même origine (Caddy route `/storage-api/*` vers
+        storage-backend sur le même DOMAIN que carto-lab) : pas de CORS à
+        gérer. L'écriture (upload/delete) reste proxiée par ce backend, cf.
+        `LayersView.post` / `LayerDetailView.delete` (`api/storage_client.py`)
+        — elle doit enregistrer/retirer la ligne `Layer` en même temps."""
         if not obj.raster_path:
             return None
         request = self.context.get('request')
-        url = reverse('layer-raster', args=[obj.pk])
-        return request.build_absolute_uri(url) if request else url
+        path = f'/storage-api/api/files/{settings.STORAGE_NAMESPACE}/content/{obj.raster_path}'
+        return request.build_absolute_uri(path) if request else path
 
 
 class DepartmentSerializer(serializers.ModelSerializer):
