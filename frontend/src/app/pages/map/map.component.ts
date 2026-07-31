@@ -32,6 +32,10 @@ interface ActiveLayer {
   legend?: { title: string; entries: LegendEntry[] };
 }
 
+// Palette de rendu OpenLayers (couches/entités cartographiques posées sur le
+// fond de carte), hors charte Foyer à dessein : ces couleurs encodent une
+// donnée géographique (couche, classe choroplèthe), pas un état de thème
+// clair/sombre — même famille d'exception que le viewer 3D d'atelier-3d.
 const PALETTE = ['#2563eb', '#dc2626', '#16a34a', '#d97706', '#7c3aed', '#0891b2'];
 
 @Component({
