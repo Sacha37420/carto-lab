@@ -5,13 +5,14 @@ La clé API est récupérée depuis le stockage éphémère (jeton), utilisée e
 jamais journalisée ni persistée.
 """
 import time
+from datetime import date
 
 from celery import shared_task
 
 from . import indicators, meteo_pipeline, secret_store
 from .meteo_client import (
     METRO_DEPARTEMENTS, MeteoClient, MeteoError, MeteoQuotaError,
-    parse_daily_csv, station_lonlat,
+    combine_period, parse_daily_csv, station_lonlat,
 )
 from .models import Job
 
@@ -113,11 +114,23 @@ def _collect_stations(client: MeteoClient, parametre: str, departements, job: Jo
 
 
 def _compute_indicator(client, stations, grandeur_cfg, indicator_name, indicator_params,
-                       year, job):
-    """4.2 — commande + télécharge les données de chaque station et calcule l'indicateur."""
-    date_deb = f"{year}-01-01T00:00:00Z"
-    date_fin = f"{year}-12-31T23:00:00Z"
+                       year_start, year_end, job):
+    """
+    4.2 — commande + télécharge les données de chaque station et calcule l'indicateur.
+
+    Une période (year_start..year_end) est découpée en UNE requête DPClim par
+    année et par station — jamais une seule requête multi-années (non vérifié
+    côté API, cf. meteo_client) — puis les chunks obtenus sont fusionnés par
+    `combine_period` avant de calculer l'indicateur. Pour une année unique
+    (year_start == year_end), une seule itération : comportement et messages
+    identiques à l'ancienne version mono-année.
+    """
+    period_start = date(year_start, 1, 1)
+    period_end = date(year_end, 12, 31)
+    years = list(range(year_start, year_end + 1))
+    n_years = len(years)
     cols = grandeur_cfg['columns']
+    main = grandeur_cfg['main']
     total = len(stations)
     ind = indicators.INDICATORS[indicator_name]
     last_error = None
@@ -125,15 +138,25 @@ def _compute_indicator(client, stations, grandeur_cfg, indicator_name, indicator
         s.setdefault('qualite', None)
         try:
             label = f"Station {s['id_station']}"
-            cmde = _with_quota_retry(
-                lambda: client.order_daily(s['id_station'], date_deb, date_fin), job, label)
-            csv_text = _with_quota_retry(lambda: client.fetch_file(cmde), job, label)
-            parsed = parse_daily_csv(csv_text, cols, grandeur_cfg['main'], year)
+            chunks = []
+            for yi, y in enumerate(years):
+                date_deb = f"{y}-01-01T00:00:00Z"
+                date_fin = f"{y}-12-31T23:00:00Z"
+                cmde = _with_quota_retry(
+                    lambda: client.order_daily(s['id_station'], date_deb, date_fin), job, label)
+                csv_text = _with_quota_retry(lambda: client.fetch_file(cmde), job, label)
+                chunks.append(parse_daily_csv(csv_text, cols, main))
+                if n_years > 1:
+                    done = i + (yi + 1) / n_years
+                    job.set_state(progress=25 + int(60 * done / total),
+                                  message=f"Indicateur « {ind['label']} » : "
+                                          f"station {i + 1}/{total}, année {y}")
             import numpy as np
-            colmap = {c: np.asarray(parsed['series'].get(c, []), dtype=float) for c in cols}
-            s['valeur'] = indicators.compute(indicator_name, colmap, grandeur_cfg['main'],
-                                             indicator_params, parsed['dated_main'])
-            s['qualite'] = parsed['quality']
+            merged = combine_period(chunks, period_start, period_end)
+            colmap = {c: np.asarray(merged['series'].get(c, []), dtype=float) for c in cols}
+            s['valeur'] = indicators.compute(indicator_name, colmap, main,
+                                             indicator_params, merged['dated_main'])
+            s['qualite'] = merged['quality']
         except MeteoQuotaError as exc:
             # comme dans _collect_stations : inutile de mitrailler les stations
             # restantes, elles échoueront toutes pareil tant que le quota ne
@@ -145,7 +168,7 @@ def _compute_indicator(client, stations, grandeur_cfg, indicator_name, indicator
         except Exception as exc:
             s['valeur'] = None
             last_error = str(exc)
-        if i % 5 == 0 or i == total - 1:
+        if n_years == 1 and (i % 5 == 0 or i == total - 1):
             job.set_state(progress=25 + int(60 * (i + 1) / total),
                           message=f"Indicateur « {ind['label']} » : {i + 1}/{total} stations")
     return stations, last_error
@@ -163,7 +186,9 @@ def build_meteo_choropleth(self, job_id: int, key_token: str, params: dict):
             raise MeteoError("Clé API absente ou expirée (relancez la commande).")
 
         grandeur = params['grandeur']
-        year = int(params['year'])
+        year_start = int(params['year_start'])
+        year_end = int(params.get('year_end', year_start))
+        period_label = str(year_start) if year_start == year_end else f"{year_start}–{year_end}"
         indicator_name = params['indicator']
         indicator_params = params.get('indicator_params', {})
         classification = params.get('classification', 'quantiles')
@@ -199,7 +224,7 @@ def build_meteo_choropleth(self, job_id: int, key_token: str, params: dict):
             raise MeteoError("Aucune station trouvée pour cette grandeur.")
 
         stations, last_error = _compute_indicator(client, stations, cfg, indicator_name,
-                                                  indicator_params, year, job)
+                                                  indicator_params, year_start, year_end, job)
         usable = [s for s in stations if s.get('valeur') is not None]
         if not usable:
             detail = f" Dernière erreur rencontrée : {last_error}" if last_error else ""
@@ -210,7 +235,7 @@ def build_meteo_choropleth(self, job_id: int, key_token: str, params: dict):
         # valeur exploitable), avec leurs métriques de qualité en propriétés — la
         # station qui n'a rien produit reste visible, avec de quoi expliquer pourquoi.
         stations_layer = meteo_pipeline.build_stations_layer(
-            stations, grandeur, ind['label'], year, job.owner_email)
+            stations, grandeur, ind['label'], year_start, year_end, job.owner_email)
 
         filtered = [s for s in usable if _passes_quality(s, quality_thresholds)]
         if not filtered:
@@ -220,7 +245,7 @@ def build_meteo_choropleth(self, job_id: int, key_token: str, params: dict):
             )
 
         job.set_state(progress=94, message="Découpage France + classification choroplèthe…")
-        title = f"{cfg['label']} {year} — {ind['label']}"
+        title = f"{cfg['label']} {period_label} — {ind['label']}"
         included_ids = {s['id_station'] for s in filtered}
         result = meteo_pipeline.build_choropleth(
             stations_layer, title, classification, n_classes, ramp,

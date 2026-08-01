@@ -41,7 +41,7 @@ def ensure_france_layer() -> Layer:
 
 
 def build_stations_layer(stations: list[dict], grandeur: str, indicateur_label: str,
-                         year: int, owner_email: str = '') -> Layer:
+                         year_start: int, year_end: int, owner_email: str = '') -> Layer:
     """
     Crée la couche ponctuelle des stations (4.1). Chaque station :
         {'lon', 'lat', 'valeur', 'id_station', 'nom', 'qualite'}
@@ -50,12 +50,19 @@ def build_stations_layer(stations: list[dict], grandeur: str, indicateur_label: 
     justement ce qui explique l'absence de valeur, ex. 0% de complétude).
     Seules les stations sans coordonnées (jamais censé arriver, cf. filtrage à la
     collecte) sont réellement exclues, faute de pouvoir les placer sur la carte.
+
+    `year_start`/`year_end` : période demandée (year_start == year_end pour une
+    année unique — cas historique, toujours le mode par défaut de l'UI).
     """
+    period_label = str(year_start) if year_start == year_end else f"{year_start}–{year_end}"
     layer = Layer.objects.create(
-        name=f"Stations {grandeur} {year} — {indicateur_label}",
+        name=f"Stations {grandeur} {period_label} — {indicateur_label}",
         layer_type=Layer.VECTOR, origin=Layer.ORIGIN_METEO, srid_source=4326,
         geom_type='Point', owner_email=owner_email,
-        metadata={'grandeur': grandeur, 'annee': year, 'indicateur': indicateur_label},
+        metadata={
+            'grandeur': grandeur, 'annee_debut': year_start, 'annee_fin': year_end,
+            'indicateur': indicateur_label,
+        },
     )
     feats = []
     xs, ys = [], []
@@ -161,7 +168,8 @@ def build_choropleth(stations_layer: Layer, title: str,
             'value_field': 'valeur',
         },
         'grandeur': stations_layer.metadata.get('grandeur'),
-        'annee': stations_layer.metadata.get('annee'),
+        'annee_debut': stations_layer.metadata.get('annee_debut'),
+        'annee_fin': stations_layer.metadata.get('annee_fin'),
     }
     clipped.save(update_fields=['origin', 'metadata'])
     return clipped

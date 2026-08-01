@@ -36,8 +36,22 @@
         <option *ngFor="let g of opts.grandeurs" [value]="g.key">{{ g.label }} ({{ g.unit }})</option>
       </select>
 
-      <label>Année</label>
+      <label>Année {{ form.periodMode ? 'de début' : '' }}</label>
       <input type="number" [(ngModel)]="form.year" min="1950" max="2025" />
+
+      <label>
+        <input type="checkbox" [(ngModel)]="form.periodMode" />
+        Période (plusieurs années)
+      </label>
+      <ng-container *ngIf="form.periodMode">
+        <label>Année de fin</label>
+        <input type="number" [(ngModel)]="form.yearEnd" min="1950" max="2025" />
+        <p class="hint">
+          Une période interroge Météo-France une fois par année <strong>et</strong> par
+          station : le traitement est proportionnellement plus long qu'une année seule.
+          Réduisez « Max stations » pour une période longue.
+        </p>
+      </ng-container>
 
       <label>Indicateur</label>
       <select [(ngModel)]="form.indicator" (ngModelChange)="onIndicatorChange()">
@@ -122,10 +136,14 @@
       <ng-template #noJob><p class="hint">Aucun traitement en cours.</p></ng-template>
 
       <h3 class="mt">Jobs récents</h3>
-      <ul class="jobs">
+      <p class="err" *ngIf="jobsError()">
+        Impossible de charger les jobs.
+        <button (click)="reloadJobs()">Réessayer</button>
+      </p>
+      <ul class="jobs" *ngIf="!jobsError()">
         <li *ngFor="let j of jobs(); trackBy: trackJob">
           <span class="badge" [class]="j.status.toLowerCase()">{{ j.status }}</span>
-          <span class="jlabel">{{ j.params['grandeur'] }} {{ j.params['year'] }} · {{ j.params['indicator'] }}</span>
+          <span class="jlabel">{{ j.params['grandeur'] }} {{ jobPeriodLabel(j) }} · {{ j.params['indicator'] }}</span>
           <a *ngIf="j.result_layer" routerLink="/map" class="link">carte</a>
         </li>
         <li *ngIf="!jobs().length" class="hint">Aucun job.</li>

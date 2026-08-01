@@ -106,7 +106,8 @@ export interface MeteoQualityThresholds {
 
 export interface MeteoJobRequest {
   grandeur: string;
-  year: number;
+  year_start: number;
+  year_end: number;
   indicator: string;
   indicator_params?: Record<string, unknown>;
   classification?: string;

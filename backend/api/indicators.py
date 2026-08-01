@@ -103,7 +103,7 @@ def _series(cols, main, override):
 # qui intègrent la grandeur dans le temps (intégrale à seuil) en ont besoin, car
 # `cols`/`_series` ne conservent qu'un tableau à plat, sans les jours associés —
 # indispensable pour connaître l'écart entre deux relevés consécutifs.
-@indicator('mean', 'Moyenne annuelle')
+@indicator('mean', 'Moyenne')
 def _mean(cols, main, params, dated):
     a = _series(cols, main, None)
     return float(np.mean(a)) if a.size else None
@@ -121,7 +121,7 @@ def _max(cols, main, params, dated):
     return float(np.max(a)) if a.size else None
 
 
-@indicator('sum', 'Cumul annuel')
+@indicator('sum', 'Cumul')
 def _sum(cols, main, params, dated):
     a = _series(cols, main, None)
     return float(np.sum(a)) if a.size else None

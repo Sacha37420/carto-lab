@@ -395,8 +395,11 @@ class MeteoJobLaunchView(APIView):
     POST /api/meteo/jobs/ — lance la construction async d'une carte Météo-France.
     La clé API est fournie dans le header `X-Meteo-Key` (jamais dans le corps, jamais
     persistée) et déposée en Redis éphémère ; seul un jeton transite vers le worker.
-    Corps : { grandeur, year, indicator, indicator_params?, classification?, n_classes?,
-              ramp?, max_stations?, quality_thresholds? }
+    Corps : { grandeur, year_start, year_end?, indicator, indicator_params?,
+              classification?, n_classes?, ramp?, max_stations?, quality_thresholds? }
+    `year_end` optionnel : absent ou égal à `year_start` → une seule année (comportement
+    historique) ; supérieur → période pluriannuelle (une requête DPClim par année, cf.
+    `tasks._compute_indicator`).
     """
 
     def post(self, request):
@@ -410,13 +413,19 @@ class MeteoJobLaunchView(APIView):
         if d.get('indicator') not in ind_mod.INDICATORS:
             return Response({'detail': "Indicateur invalide."}, status=status.HTTP_400_BAD_REQUEST)
         try:
-            year = int(d.get('year'))
+            year_start = int(d.get('year_start'))
+            year_end = int(d.get('year_end') or year_start)
         except (TypeError, ValueError):
             return Response({'detail': "Année invalide."}, status=status.HTTP_400_BAD_REQUEST)
+        if year_end < year_start:
+            return Response(
+                {'detail': "L'année de fin doit être postérieure ou égale à l'année de début."},
+                status=status.HTTP_400_BAD_REQUEST)
 
         params = {
             'grandeur': d['grandeur'],
-            'year': year,
+            'year_start': year_start,
+            'year_end': year_end,
             'indicator': d['indicator'],
             'indicator_params': d.get('indicator_params', {}),
             'classification': d.get('classification', 'quantiles'),

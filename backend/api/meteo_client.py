@@ -28,7 +28,7 @@ import csv
 import io
 import re
 import time
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import requests
 from django.conf import settings
@@ -241,18 +241,28 @@ class MeteoClient:
 
 
 # ── Parsing du CSV quotidien ──────────────────────────────────────────────────
-def _day_of_year(date_str: str, year: int) -> int | None:
-    """« YYYYMMDD » → jour de l'année (1-366), ou None si invalide/hors année."""
+def _day_offset(date_str: str, period_start: date, period_end: date) -> int | None:
+    """
+    « YYYYMMDD » → indice de jour continu depuis `period_start` (1-based), ou
+    None si invalide ou hors de `[period_start, period_end]`. Généralise
+    l'ancien « jour de l'année » : pour une période d'un an (period_start =
+    1er janvier, period_end = 31 décembre de la même année), produit
+    exactement les mêmes valeurs (1..365/366).
+    """
     try:
         d = datetime.strptime(date_str, '%Y%m%d').date()
     except ValueError:
         return None
-    return d.timetuple().tm_yday if d.year == year else None
+    if not (period_start <= d <= period_end):
+        return None
+    return (d - period_start).days + 1
 
 
-def _quality_metrics(valid_days: set[str], date_counts: dict[str, int], year: int) -> dict:
+def _quality_metrics(valid_days: set[str], date_counts: dict[str, int],
+                     period_start: date, period_end: date) -> dict:
     """
-    Métriques de qualité d'une station pour une grandeur donnée, sur une année.
+    Métriques de qualité d'une station pour une grandeur donnée, sur toute la
+    période demandée (une année ou une période pluriannuelle).
 
     La donnée DPClim « quotidienne » n'a qu'UN point par jour (pas de résolution
     horaire) : « heures couvertes »/« trou max » sont donc calculés au jour près
@@ -261,19 +271,20 @@ def _quality_metrics(valid_days: set[str], date_counts: dict[str, int], year: in
     de date, eux, sont une vraie mesure directe (plusieurs lignes pour un même
     jour dans le CSV brut = défaut de la source, indépendant de la grandeur).
     """
-    is_leap = year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
-    total_days = 366 if is_leap else 365
+    total_days = (period_end - period_start).days + 1
     total_hours = total_days * 24
     valid_hours = len(valid_days) * 24
 
-    doy_list = sorted(doy for doy in (_day_of_year(d, year) for d in valid_days) if doy is not None)
-    if doy_list:
-        gaps = [doy_list[0] - 1]                      # avant le 1er relevé valide
-        gaps += [b - a - 1 for a, b in zip(doy_list, doy_list[1:])]  # entre relevés
-        gaps.append(total_days - doy_list[-1])         # après le dernier relevé valide
+    offsets = sorted(
+        o for o in (_day_offset(d, period_start, period_end) for d in valid_days) if o is not None
+    )
+    if offsets:
+        gaps = [offsets[0] - 1]                        # avant le 1er relevé valide
+        gaps += [b - a - 1 for a, b in zip(offsets, offsets[1:])]  # entre relevés
+        gaps.append(total_days - offsets[-1])           # après le dernier relevé valide
         max_gap_days = max(gaps)
     else:
-        max_gap_days = total_days                       # aucun relevé valide de l'année
+        max_gap_days = total_days                        # aucun relevé valide sur la période
 
     max_same_datetime = max(date_counts.values()) if date_counts else 0
     total_duplicates = sum(c - 1 for c in date_counts.values() if c > 1)
@@ -288,23 +299,27 @@ def _quality_metrics(valid_days: set[str], date_counts: dict[str, int], year: in
     }
 
 
-def parse_daily_csv(text: str, columns: list[str], main_column: str, year: int) -> dict:
+def parse_daily_csv(text: str, columns: list[str], main_column: str) -> dict:
     """
-    Parse un CSV quotidien DPClim (séparateur ';') en un seul passage. Renvoie :
+    Parse UN chunk de CSV quotidien DPClim (séparateur ';') — en pratique une
+    station pour une seule année, cf. `tasks._compute_indicator` qui découpe
+    toute période demandée en une requête DPClim par année. Renvoie les
+    ingrédients bruts, non encore rattachés à une période :
       - 'series'     : {colonne: [valeurs]} pour chaque colonne demandée (cellules
-                        vides/non numériques ignorées) — comportement historique,
-                        utilisé par les indicateurs statistiques simples ;
-      - 'dated_main' : [(jour_de_l'année, valeur), ...] triés par jour, pour
-                        `main_column` uniquement — nécessaire aux indicateurs qui
-                        intègrent la grandeur dans le temps (intégrale à seuil).
-                        En cas de date dupliquée, seule la 1re valeur rencontrée
-                        est gardée (une même date ne peut pas avoir deux valeurs
-                        distinctes pour une fonction bien définie) ; le doublon
-                        lui-même est compté dans 'quality'.
-      - 'quality'    : métriques de qualité de la station (cf. _quality_metrics).
+                        vides/non numériques ignorées) ;
+      - 'dated_main' : [(date 'YYYYMMDD', valeur), ...] pour `main_column`
+                        uniquement. En cas de date dupliquée DANS CE CHUNK, seule
+                        la 1re valeur rencontrée est gardée (une même date ne
+                        peut pas avoir deux valeurs distinctes pour une fonction
+                        bien définie) ; le doublon lui-même est compté dans
+                        'date_counts'.
+      - 'date_counts': {date: nb de lignes}.
+    La conversion en jour continu et le calcul de qualité sont différés à
+    `combine_period`, qui a besoin de voir TOUS les chunks d'une station pour
+    raisonner sur la période entière plutôt que sur un fragment.
     """
     out: dict[str, list[float]] = {c: [] for c in columns}
-    dated_main: list[tuple[int, float]] = []
+    dated_main: list[tuple[str, float]] = []
     date_counts: dict[str, int] = {}
     valid_main_days: set[str] = set()
 
@@ -324,16 +339,49 @@ def parse_daily_csv(text: str, columns: list[str], main_column: str, year: int) 
                 continue
             out[c].append(val)
             if c == main_column and date_str and date_str not in valid_main_days:
-                doy = _day_of_year(date_str, year)
-                if doy is not None:
-                    dated_main.append((doy, val))
-                    valid_main_days.add(date_str)
+                dated_main.append((date_str, val))
+                valid_main_days.add(date_str)
 
+    return {'series': out, 'dated_main': dated_main, 'date_counts': date_counts}
+
+
+def combine_period(chunks: list[dict], period_start: date, period_end: date) -> dict:
+    """
+    Fusionne les chunks (un par année interrogée, cf. `parse_daily_csv`) d'une
+    même station en un seul jeu de données couvrant toute la période demandée :
+    concatène les séries et additionne les compteurs de dates (des dates
+    'YYYYMMDD' de chunks différents — des années différentes — sont toujours
+    distinctes par construction, aucune déduplication inter-chunk n'est donc
+    nécessaire), convertit chaque date valide en indice de jour continu depuis
+    `period_start` (pour que les indicateurs à intégrale restent corrects même
+    à travers un trou de plusieurs années), et calcule la qualité une seule
+    fois sur la période entière (pas année par année).
+    """
+    series: dict[str, list[float]] = {}
+    date_counts: dict[str, int] = {}
+    valid_days: set[str] = set()
+    dated_raw: list[tuple[str, float]] = []
+
+    for chunk in chunks:
+        for c, vals in chunk['series'].items():
+            series.setdefault(c, []).extend(vals)
+        for d, n in chunk['date_counts'].items():
+            date_counts[d] = date_counts.get(d, 0) + n
+        for d, v in chunk['dated_main']:
+            valid_days.add(d)
+            dated_raw.append((d, v))
+
+    dated_main: list[tuple[int, float]] = []
+    for d, v in dated_raw:
+        off = _day_offset(d, period_start, period_end)
+        if off is not None:
+            dated_main.append((off, v))
     dated_main.sort(key=lambda p: p[0])
+
     return {
-        'series': out,
+        'series': series,
         'dated_main': dated_main,
-        'quality': _quality_metrics(valid_main_days, date_counts, year),
+        'quality': _quality_metrics(valid_days, date_counts, period_start, period_end),
     }
 
 

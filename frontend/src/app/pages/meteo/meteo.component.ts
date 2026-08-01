@@ -23,6 +23,7 @@ export class MeteoComponent implements OnInit, OnDestroy {
   options = signal<MeteoOptions | null>(null);
   optionsError = signal(false);
   jobs = signal<Job[]>([]);
+  jobsError = signal(false);
   current = signal<Job | null>(null);
   err = signal('');
 
@@ -38,6 +39,8 @@ export class MeteoComponent implements OnInit, OnDestroy {
   form = {
     grandeur: 'temperature',
     year: 2020,
+    periodMode: false,
+    yearEnd: 2020,
     indicator: 'mean',
     classification: 'quantiles',
     n_classes: 5,
@@ -74,7 +77,20 @@ export class MeteoComponent implements OnInit, OnDestroy {
   }
 
   reloadJobs(): void {
-    this.api.getJobs().subscribe({ next: (j) => this.jobs.set(j), error: () => {} });
+    this.jobsError.set(false);
+    this.api.getJobs().subscribe({
+      next: (j) => {
+        this.jobs.set(j);
+        // Reprend le suivi d'un job encore en cours (lancé depuis un autre
+        // onglet, ou avant un rechargement de page) : sans ça, `current`
+        // reste indéfiniment vide après un F5 et "Progression" ment.
+        if (!this.current() || (this.current()!.status !== 'RUNNING' && this.current()!.status !== 'PENDING')) {
+          const inFlight = j.find((job) => job.status === 'RUNNING' || job.status === 'PENDING');
+          if (inFlight) { this.current.set(inFlight); this.startPoll(inFlight.id); }
+        }
+      },
+      error: () => this.jobsError.set(true),
+    });
   }
 
   saveKey(): void { localStorage.setItem('mf_key', this.apiKey); }
@@ -90,10 +106,16 @@ export class MeteoComponent implements OnInit, OnDestroy {
   launch(): void {
     this.err.set('');
     if (!this.apiKey) { this.err.set('Saisissez votre clé API Météo-France.'); return; }
+    const yearEnd = this.form.periodMode ? this.form.yearEnd : this.form.year;
+    if (yearEnd < this.form.year) {
+      this.err.set("L'année de fin doit être postérieure ou égale à l'année de début.");
+      return;
+    }
     this.saveKey();
     this.api.launchMeteoJob(this.apiKey, {
       grandeur: this.form.grandeur,
-      year: this.form.year,
+      year_start: this.form.year,
+      year_end: yearEnd,
       indicator: this.form.indicator,
       indicator_params: { ...this.indicatorParams },
       classification: this.form.classification,
@@ -122,4 +144,15 @@ export class MeteoComponent implements OnInit, OnDestroy {
   private stopPoll(): void { if (this.poll) { clearInterval(this.poll); this.poll = null; } }
 
   trackJob(_: number, j: Job): number { return j.id; }
+
+  /** Affiche la période d'un job dans « Jobs récents ». Tolère les jobs
+   * historiques dont les `params` figés en base n'ont que l'ancienne clé
+   * `year` (avant l'introduction des périodes pluriannuelles). */
+  jobPeriodLabel(j: Job): string {
+    const p = j.params as Record<string, unknown>;
+    const start = (p['year_start'] ?? p['year']) as number | undefined;
+    if (start == null) return '';
+    const end = (p['year_end'] as number | undefined) ?? start;
+    return start === end ? String(start) : `${start}–${end}`;
+  }
 }
