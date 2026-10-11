@@ -146,12 +146,22 @@ class PublicationTests(LabTestCase):
         layer = couche('Taux', [carre(0, 0)], props=[{'taux_%': 12, 'part %s': 'x'}])
         self.assertEqual(self.alice.post(f'/api/layers/{layer.pk}/publish/').status_code, 201)
 
-    # DÉFAUT (rapport, C5) — supprimer une couche publiée ne la dépublie pas :
-    # LayerDetailView.delete efface la fiche et les entités, mais la table de
-    # carto_public reste, toujours servie par pg_featureserv, et plus aucune
-    # route de l'API ne permet de la retirer (la couche n'existe plus).
-    @unittest.expectedFailure
     def test_supprimer_une_couche_publiee_retire_sa_table(self):
+        # Corrigé (C5) : la table de carto_public restait, toujours servie par
+        # pg_featureserv, sans plus aucune route pour la retirer.
+        autre = couche('Autre', [carre(5, 5)])
+        self.alice.post(f'/api/layers/{autre.pk}/publish/')
         self.alice.post(self.url)
         self.assertEqual(self.alice.delete(f'/api/layers/{self.layer.pk}/').status_code, 204)
         self.assertFalse(table_existe(self.table))
+        self.assertFalse(Layer.objects.filter(pk=self.layer.pk).exists())
+        # … et seulement la sienne.
+        self.assertEqual(tables_publiques(), [table_name(autre)])
+
+    def test_supprimer_une_couche_non_publiee_ne_touche_pas_carto_public(self):
+        self.alice.post(self.url)
+        autre = couche('Autre', [carre(5, 5)])
+        with CaptureQueriesContext(connection) as requetes:
+            self.assertEqual(self.alice.delete(f'/api/layers/{autre.pk}/').status_code, 204)
+        self.assertFalse([q for q in requetes if 'DROP TABLE' in q['sql'].upper()])
+        self.assertEqual(tables_publiques(), [self.table])

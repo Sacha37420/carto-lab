@@ -7,6 +7,7 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
 
 from django.contrib.gis.geos import GEOSGeometry
+from django.db import transaction
 from drf_spectacular.utils import extend_schema, OpenApiParameter
 
 from .models import Department, Feature, Job, Layer, Recipe, UserRecord
@@ -145,7 +146,14 @@ class LayerDetailView(APIView):
             return Response(status=status.HTTP_404_NOT_FOUND)
         if layer.raster_path:
             storage_client.delete(request.headers.get('Authorization', ''), layer.raster_path)
-        layer.delete()
+        # Une couche publiée a une copie dans carto_public, servie par
+        # pg_featureserv : elle part avec la couche, dans la même transaction.
+        # Sans cela la table restait exposée après la suppression, et plus
+        # aucune route ne permettait de la retirer (la couche n'existe plus).
+        with transaction.atomic():
+            if layer.published_qgis or (layer.metadata or {}).get('published'):
+                publish_mod.unpublish_layer(layer)
+            layer.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
