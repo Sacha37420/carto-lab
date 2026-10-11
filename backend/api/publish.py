@@ -81,10 +81,16 @@ def publish_layer(layer: Layer) -> dict:
     col_defs = ", ".join(
         f'"{col}" {"double precision" if is_num else "text"}' for _, col, is_num in colmap
     )
+    def _literal(key: str) -> str:
+        # Littéral SQL de la clé : apostrophe doublée, et « % » doublé car la
+        # requête est exécutée avec des paramètres liés (psycopg lirait sinon
+        # « taux_% » ou « %s » comme un marqueur de paramètre).
+        return key.replace("'", "''").replace('%', '%%')
+
     select_cols = ", ".join(
-        (f"NULLIF(properties->>'{key.replace(chr(39), chr(39) * 2)}','')::double precision"
+        (f"NULLIF(properties->>'{_literal(key)}','')::double precision"
          if is_num else
-         f"properties->>'{key.replace(chr(39), chr(39) * 2)}'")
+         f"properties->>'{_literal(key)}'")
         for key, _, is_num in colmap
     )
     insert_cols = ", ".join(f'"{col}"' for _, col, _ in colmap)

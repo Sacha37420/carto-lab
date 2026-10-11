@@ -2,8 +2,6 @@
 ``carto_public``, seul schéma que voit le rôle en lecture seule de
 pg_featureserv. Les noms de table et de colonne viennent de données
 utilisateur (nom de couche, clés d'attributs) : ils doivent être neutralisés."""
-import unittest
-
 from django.conf import settings
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
@@ -135,16 +133,17 @@ class PublicationTests(LabTestCase):
             with self.subTest(brut=brut):
                 self.assertEqual(_ident(brut), attendu)
 
-    # DÉFAUT (rapport, C4) — une clé d'attribut contenant « % » est recopiée dans
-    # le SQL exécuté avec des paramètres liés : psycopg y voit un marqueur de
-    # paramètre et la publication lève une exception non attrapée (500). Pas
-    # d'injection possible, mais une couche importée d'un fichier dont un champ
-    # s'appelle « taux_% » est impubliable.
-    @unittest.expectedFailure
     def test_cle_d_attribut_avec_un_pourcent(self):
-        self.alice.raise_request_exception = False
-        layer = couche('Taux', [carre(0, 0)], props=[{'taux_%': 12, 'part %s': 'x'}])
-        self.assertEqual(self.alice.post(f'/api/layers/{layer.pk}/publish/').status_code, 201)
+        # Corrigé (C4) : psycopg lisait le « % » de la clé comme un marqueur de
+        # paramètre, et la couche était impubliable (500).
+        layer = couche('Taux %', [carre(0, 0)], props=[
+            {'taux_%': 12, 'part %s': 'x', '%(nom)s': 'y', '100%%': 3}])
+        resp = self.alice.post(f'/api/layers/{layer.pk}/publish/')
+        self.assertEqual(resp.status_code, 201, resp.content)
+        table = resp.json()['collection'].split('.', 1)[1]
+        with connection.cursor() as cur:
+            cur.execute(f'SELECT taux, part__s, nom_s, "_100" FROM carto_public."{table}"')
+            self.assertEqual(cur.fetchone(), (12.0, 'x', 'y', 3.0))
 
     def test_supprimer_une_couche_publiee_retire_sa_table(self):
         # Corrigé (C5) : la table de carto_public restait, toujours servie par
