@@ -16,7 +16,7 @@ import tempfile
 import zipfile
 
 from django.conf import settings
-from django.contrib.gis.gdal import DataSource
+from django.contrib.gis.gdal import DataSource, GDALException
 from django.contrib.gis.geos import GEOSGeometry, Point
 
 from .crs import validate_srid
@@ -185,16 +185,23 @@ def import_layer(uploaded_file, name: str, force_srid=None, owner_email: str = '
             for chunk in uploaded_file.chunks():
                 out.write(chunk)
 
-        if ext == '.csv':
-            features, source_srid = _parse_csv(tmp_path, force_srid)
-        elif ext == '.zip':
-            # Shapefile compressé : lecture via le système de fichiers virtuel GDAL.
-            features, source_srid = _parse_ogr(f'/vsizip/{tmp_path}', force_srid)
-        elif ext == '.kmz':
-            kml_path = _extract_kml_from_kmz(tmp_path, workdir)
-            features, source_srid = _parse_ogr(kml_path, force_srid)
-        else:
-            features, source_srid = _parse_ogr(tmp_path, force_srid)
+        # Un fichier à la bonne extension mais au contenu illisible (tronqué,
+        # binaire, archive corrompue) est une entrée invalide, pas une panne :
+        # message à l'utilisateur (400), jamais une exception brute (500).
+        try:
+            if ext == '.csv':
+                features, source_srid = _parse_csv(tmp_path, force_srid)
+            elif ext == '.zip':
+                # Shapefile compressé : lecture via le système de fichiers virtuel GDAL.
+                features, source_srid = _parse_ogr(f'/vsizip/{tmp_path}', force_srid)
+            elif ext == '.kmz':
+                kml_path = _extract_kml_from_kmz(tmp_path, workdir)
+                features, source_srid = _parse_ogr(kml_path, force_srid)
+            else:
+                features, source_srid = _parse_ogr(tmp_path, force_srid)
+        except (GDALException, UnicodeDecodeError, zipfile.BadZipFile) as exc:
+            raise LayerImportError(f"Fichier illisible : son contenu ne correspond pas "
+                                   f"au format « {ext.lstrip('.')} ».") from exc
 
         bbox, geom_type = _bbox_and_type(features)
         layer = Layer.objects.create(
@@ -241,7 +248,11 @@ def _import_raster(uploaded_file, name: str, owner_email: str = '', auth_header:
             tmp.write(chunk)
         tmp.flush()
 
-        with rasterio.open(tmp.name) as src:
+        try:
+            src_cm = rasterio.open(tmp.name)
+        except rasterio.errors.RasterioIOError as exc:
+            raise LayerImportError("Fichier illisible : ce n'est pas un GeoTIFF valide.") from exc
+        with src_cm as src:
             source_srid = None
             if src.crs is not None:
                 try:

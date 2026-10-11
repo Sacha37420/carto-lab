@@ -110,20 +110,25 @@ class ImportVecteurTests(LabTestCase):
             self.assertEqual(self.importer('a.geojson', contenu).status_code, 201)
         self.assertEqual(Layer.objects.count(), 1)
 
-    # DÉFAUT (rapport, C1) — un fichier à la bonne extension mais illisible fait
-    # lever GDALException dans geo._parse_ogr, que la vue n'attrape pas : 500 au
-    # lieu d'un 400 « fichier illisible ».
-    @unittest.expectedFailure
     def test_fichier_illisible_refuse_proprement(self):
-        self.alice.raise_request_exception = False
-        resp = self.importer('casse.geojson', b'{"type": "FeatureCollection", "features": [')
-        self.assertEqual(resp.status_code, 400)
-
-    def test_fichier_illisible_ne_laisse_rien(self):
-        self.alice.raise_request_exception = False
-        self.importer('casse.geojson', b'ceci n est pas du JSON')
-        self.importer('casse.gpkg', b'\x00\x01\x02')
+        # Corrigé (C1) : l'exception de GDAL n'était pas attrapée (500).
+        cas = {
+            'GeoJSON tronqué': ('casse.geojson', b'{"type": "FeatureCollection", "features": ['),
+            'GeoJSON qui n’en est pas': ('casse.json', b'ceci n est pas du JSON'),
+            'GeoPackage binaire quelconque': ('casse.gpkg', b'\x00\x01\x02'),
+            'KML vide': ('casse.kml', b''),
+            'archive qui n’en est pas une': ('casse.zip', b'pas une archive'),
+            'KMZ qui n’est pas une archive': ('casse.kmz', b'pas une archive'),
+            'CSV binaire': ('casse.csv', b'lat,lon\n\xff\xfe\x00,1\n'),
+            'GeoTIFF qui n’en est pas un': ('casse.tif', b'pas un raster'),
+        }
+        for nom, (fichier, contenu) in cas.items():
+            with self.subTest(cas=nom):
+                resp = self.importer(fichier, contenu)
+                self.assertEqual(resp.status_code, 400, resp.content)
+                self.assertTrue(resp.json()['detail'])
         self.assertEqual(Layer.objects.count(), 0)
+        self.assertEqual(self.storage.appels, [])
 
 
 class CatalogueTests(LabTestCase):
