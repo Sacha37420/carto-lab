@@ -16,6 +16,7 @@ Météo-France sont simulés (``helpers.py``).
                           en bout sur un faux DPClim, CSV, qualité, indicateurs,
                           classification.
 
-Un test ``expectedFailure`` montre un défaut du code de production (voir son
-commentaire) ; il deviendra « succès inattendu » quand le défaut sera corrigé.
+Les défauts que cette suite a montrés (C1 à C5 du rapport) sont corrigés ; un
+test ``expectedFailure`` ajouté plus tard montrerait un défaut connu, à corriger
+en retirant le décorateur.
 """

@@ -255,10 +255,16 @@ class TransformPointView(APIView):
 # ──────────────────────────────────────────────────────────────────────────────
 def _resolve_layers(ids):
     """Charge des couches par id en préservant l'ordre ; lève si l'une manque."""
+    if not isinstance(ids, (list, tuple)):
+        raise processing.ProcessingError("« inputs » doit être une liste d'identifiants de couche.")
     layers = []
     for lid in ids:
+        # Un identifiant est un entier (ou sa forme texte) : tout le reste est
+        # une entrée mal formée, pas une erreur interne.
+        if isinstance(lid, bool) or not isinstance(lid, (int, str)) or not str(lid).isdecimal():
+            raise processing.ProcessingError(f"Identifiant de couche invalide : {lid!r}.")
         try:
-            layers.append(Layer.objects.get(pk=lid))
+            layers.append(Layer.objects.get(pk=int(lid)))
         except Layer.DoesNotExist:
             raise processing.ProcessingError(f"Couche {lid} introuvable.")
     return layers
@@ -302,16 +308,29 @@ class ProcessingRunView(APIView):
 def _run_recipe(recipe: Recipe, owner_email: str, auth_header: str = '') -> Layer:
     """Exécute les étapes d'une recette dans l'ordre ; renvoie la couche finale."""
     outputs: list[Layer] = []          # sortie de chaque étape (par index)
+    # `steps` est un JSON libre, enregistré tel quel : sa forme se vérifie ici.
+    if not isinstance(recipe.steps, list):
+        raise processing.ProcessingError("Recette mal formée : « steps » doit être une liste.")
     for i, step in enumerate(recipe.steps):
+        if not isinstance(step, dict):
+            raise processing.ProcessingError(f"Étape {i}: mal formée (objet attendu).")
         op = step.get('op')
         params = step.get('params') or {}
         refs = step.get('inputs') or []
+        if not isinstance(refs, list):
+            raise processing.ProcessingError(f"Étape {i}: « inputs » doit être une liste.")
         inputs = []
         for ref in refs:
+            if not isinstance(ref, dict):
+                raise processing.ProcessingError(f"Étape {i}: entrée mal formée {ref!r}.")
             if 'layer' in ref:
                 inputs.append(_resolve_layers([ref['layer']])[0])
             elif 'step' in ref:
                 idx = ref['step']
+                if isinstance(idx, bool) or not isinstance(idx, int):
+                    raise processing.ProcessingError(
+                        f"Étape {i}: référence d'étape {idx!r} invalide."
+                    )
                 if idx < 0 or idx >= len(outputs):
                     raise processing.ProcessingError(
                         f"Étape {i}: référence d'étape {idx} invalide."

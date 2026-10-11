@@ -5,7 +5,6 @@ Chaque traitement produit TOUJOURS une nouvelle couche ; un traitement qui
 près de l'équateur, où 1° ≈ 111 km dans les deux directions.
 """
 import math
-import unittest
 
 from api import processing
 from api.models import Feature, Layer, Recipe
@@ -194,16 +193,22 @@ class RefusTests(Base):
                 self.assertTrue(resp.json()['detail'])
                 self.assertEqual(Layer.objects.count(), self.avant)
 
-    # DÉFAUT (rapport, C3) — `inputs` n'est pas validé : une valeur qui n'est pas
-    # une liste d'identifiants fait lever ValueError/TypeError dans
-    # _resolve_layers (seul Layer.DoesNotExist est attrapé) : 500 au lieu de 400.
-    @unittest.expectedFailure
     def test_entrees_mal_formees_refusees_proprement(self):
-        self.alice.raise_request_exception = False
-        for inputs in ('abc', [{'layer': 1}], ['un']):
-            resp = self.alice.post('/api/processings/run/', {
-                'operation': 'buffer', 'inputs': inputs, 'params': {}}, format='json')
-            self.assertEqual(resp.status_code, 400)
+        # Corrigé (C3) : `inputs` n'était pas validé (ValueError/TypeError, 500).
+        for inputs in ('abc', [{'layer': 1}], ['un'], [None], [1.5], [True], [[self.a.pk]],
+                       {'0': self.a.pk}, 7, ['-1'], ['²'], [''], [str(self.a.pk) + ' OR 1=1']):
+            with self.subTest(inputs=inputs):
+                resp = self.alice.post('/api/processings/run/', {
+                    'operation': 'buffer', 'inputs': inputs, 'params': {}}, format='json')
+                self.assertEqual(resp.status_code, 400, resp.content)
+                self.assertTrue(resp.json()['detail'])
+
+    def test_identifiant_en_texte_accepte(self):
+        # Un formulaire envoie volontiers « 12 » : toujours accepté.
+        resp = self.alice.post('/api/processings/run/', {
+            'operation': 'centroid', 'inputs': [str(self.a.pk)], 'params': {}}, format='json')
+        self.assertEqual(resp.status_code, 201)
+        Layer.objects.get(pk=resp.json()['id']).delete()
 
 
 class VectorisationTests(Base):
@@ -301,11 +306,27 @@ class RecettesTests(Base):
                 self.assertEqual(resp.status_code, 400, resp.content)
                 self.assertIsNone(Recipe.objects.get(pk=recette['id']).result_layer)
 
-    # DÉFAUT (rapport, C3) — `steps` est un JSON libre, accepté tel quel à la
-    # création : une recette dont les étapes ne sont pas des objets fait lever
-    # AttributeError dans _run_recipe à l'exécution : 500 au lieu de 400.
-    @unittest.expectedFailure
     def test_etapes_mal_formees_refusees_proprement(self):
-        self.alice.raise_request_exception = False
-        recette = self.creer(['buffer']).json()
-        self.assertEqual(self.alice.post(f"/api/recipes/{recette['id']}/run/").status_code, 400)
+        # Corrigé (C3) : `steps` est un JSON libre ; mal formé, il faisait lever
+        # AttributeError/TypeError à l'exécution (500).
+        p = self.points.pk
+        cas = {
+            'étape texte': ['buffer'],
+            'steps texte': 'buffer',
+            'steps objet': {'op': 'buffer'},
+            'steps nombre': 3,
+            'étape nulle': [None],
+            'inputs texte': [{'op': 'dissolve', 'inputs': 'abc'}],
+            'entrée texte': [{'op': 'dissolve', 'inputs': ['abc']}],
+            'couche non entière': [{'op': 'dissolve', 'inputs': [{'layer': {'id': p}}]}],
+            'étape en texte': [{'op': 'centroid', 'inputs': [{'layer': p}]},
+                               {'op': 'dissolve', 'inputs': [{'step': '0'}]}],
+            'étape nulle en référence': [{'op': 'centroid', 'inputs': [{'layer': p}]},
+                                         {'op': 'dissolve', 'inputs': [{'step': None}]}],
+        }
+        for nom, steps in cas.items():
+            with self.subTest(cas=nom):
+                recette = Recipe.objects.create(name=nom, steps=steps)
+                resp = self.alice.post(f'/api/recipes/{recette.pk}/run/')
+                self.assertEqual(resp.status_code, 400, resp.content)
+                self.assertTrue(resp.json()['detail'])

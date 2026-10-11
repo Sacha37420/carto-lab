@@ -14,9 +14,8 @@ catalogue des couches, rasters dans `storage`, moteur de calculs PostGIS, recett
 QGIS, chaîne Météo-France sur un faux DPClim. Vérifié le 2026-10-11 par
 `bash chantiers/tests/essai.sh carto-lab` (commande ci-dessus).
 
-Tests à passer : `python manage.py test --settings=config.settings_test` — tous verts ; les tests
-marqués `expectedFailure` décrivent des défauts connus du code, à corriger un par un (retirer le
-décorateur avec la correction).
+Tests à passer : `python manage.py test --settings=config.settings_test` — tous verts, aucun
+`expectedFailure` (les cinq défauts que la suite avait montrés sont corrigés).
 
 ## Notes
 
