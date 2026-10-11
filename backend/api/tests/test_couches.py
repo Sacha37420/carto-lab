@@ -6,7 +6,6 @@ calcule et supprime toutes les couches ; il n'y a pas de cloisonnement par
 propriétaire, et c'est voulu (CLAUDE.md, « Partage lié à un groupe Keycloak »).
 """
 import io
-import unittest
 import zipfile
 from unittest import mock
 
@@ -290,24 +289,30 @@ class RasterTests(LabTestCase):
         layer = Layer.objects.create(name='R', layer_type='raster', raster_path='rasters/perdu.tif')
         self.assertEqual(self.alice.delete(f'/api/layers/{layer.pk}/').status_code, 204)
 
-    def test_storage_en_panne_aucune_couche_fantome_aucune_couche_perdue(self):
-        self.alice.raise_request_exception = False
+    def test_storage_en_panne_erreur_propre_et_etat_coherent(self):
+        # Corrigé (C2) : StorageClientError n'était pas attrapée (500 brut).
         gardee = Layer.objects.create(name='R', layer_type='raster', raster_path='rasters/a.tif')
         self.storage.files['rasters/a.tif'] = b'x'
         self.storage.down = True
-        self.importer()
+        resp = self.importer()
+        self.assertEqual(resp.status_code, 502)
+        self.assertIn('Stockage indisponible', resp.json()['detail'])
         self.assertEqual(Layer.objects.count(), 1)             # pas de fiche sans fichier
-        self.alice.delete(f'/api/layers/{gardee.pk}/')
+        resp = self.alice.delete(f'/api/layers/{gardee.pk}/')
+        self.assertEqual(resp.status_code, 502)
         self.assertTrue(Layer.objects.filter(pk=gardee.pk).exists())   # pas de fichier sans fiche
+        # Le jeton de l'appelant n'est pas recopié dans le message d'erreur.
+        self.assertNotIn(self.alice.token, resp.content.decode())
+        # Un vecteur ne dépend pas de storage : il se supprime toujours.
+        vecteur = Layer.objects.create(name='V')
+        self.assertEqual(self.alice.delete(f'/api/layers/{vecteur.pk}/').status_code, 204)
 
-    # DÉFAUT (rapport, C2) — StorageClientError n'est attrapée ni à l'import d'un
-    # raster ni à la suppression d'une couche raster : storage injoignable donne
-    # un 500 brut (l'état reste cohérent, cf. test précédent).
-    @unittest.expectedFailure
-    def test_storage_en_panne_erreur_propre(self):
-        self.alice.raise_request_exception = False
-        self.storage.down = True
-        self.assertIn(self.importer().status_code, (400, 502, 503))
+    def test_storage_refuse_l_ecriture(self):
+        # storage répond mais refuse (jeton sans droit sur le partage) : même 502.
+        from .helpers import Reponse
+        self.storage.post = lambda url, **kw: Reponse(403, text='refusé')
+        self.assertEqual(self.importer().status_code, 502)
+        self.assertEqual(Layer.objects.count(), 0)
 
     def test_aucun_jeton_dans_ce_que_l_api_expose(self):
         """Le jeton de l'appelant traverse l'import, la suppression et la

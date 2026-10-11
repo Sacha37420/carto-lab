@@ -116,6 +116,10 @@ class LayersView(APIView):
             )
         except LayerImportError as exc:
             return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except storage_client.StorageClientError as exc:
+            # Raster : storage injoignable ou en refus. Aucune couche n'est créée.
+            return Response({'detail': f'Stockage indisponible : {exc}'},
+                            status=status.HTTP_502_BAD_GATEWAY)
         return Response(
             LayerSerializer(layer, context={'request': request}).data,
             status=status.HTTP_201_CREATED,
@@ -145,7 +149,12 @@ class LayerDetailView(APIView):
         if layer is None:
             return Response(status=status.HTTP_404_NOT_FOUND)
         if layer.raster_path:
-            storage_client.delete(request.headers.get('Authorization', ''), layer.raster_path)
+            try:
+                storage_client.delete(request.headers.get('Authorization', ''), layer.raster_path)
+            except storage_client.StorageClientError as exc:
+                # La couche est gardée : pas de fichier resté dans storage sans fiche.
+                return Response({'detail': f'Stockage indisponible : {exc}'},
+                                status=status.HTTP_502_BAD_GATEWAY)
         # Une couche publiée a une copie dans carto_public, servie par
         # pg_featureserv : elle part avec la couche, dans la même transaction.
         # Sans cela la table restait exposée après la suppression, et plus
