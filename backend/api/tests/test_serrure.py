@@ -29,7 +29,7 @@ class SerrureTests(LabTestCase):
         quelle que soit la méthode."""
         anonyme = APIClient()
         chemins = self.chemins()
-        self.assertEqual(len(chemins), 18)
+        self.assertEqual(len(chemins), 16)
         for chemin in chemins:
             for methode in ('get', 'post', 'delete'):
                 with self.subTest(chemin=chemin, methode=methode):

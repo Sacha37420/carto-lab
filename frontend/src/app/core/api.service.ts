@@ -130,13 +130,7 @@ export class ApiService {
     return this.http.get(`${this.base}/api/me/`);
   }
 
-  getDepartments(): Observable<unknown[]> {
-    return this.http.get<unknown[]>(`${this.base}/api/departments/`);
-  }
 
-  getUsers(): Observable<unknown[]> {
-    return this.http.get<unknown[]>(`${this.base}/api/users/`);
-  }
 
   // ── Couches ─────────────────────────────────────────────────────────────
   getLayers(): Observable<LayerMeta[]> {

@@ -56,20 +56,6 @@ class MeView(APIView):
         })
 
 
-class DepartmentListView(generics.ListAPIView):
-    """GET /api/departments/ — liste tous les départements."""
-
-    queryset         = Department.objects.all()
-    serializer_class = DepartmentSerializer
-
-
-class UserListView(generics.ListAPIView):
-    """GET /api/users/ — liste tous les utilisateurs enregistrés."""
-
-    queryset         = UserRecord.objects.select_related('department')
-    serializer_class = UserRecordSerializer
-
-
 # ──────────────────────────────────────────────────────────────────────────────
 # COUCHES — import, catalogue, GeoJSON reprojeté (Features 1, 2, 6)
 # ──────────────────────────────────────────────────────────────────────────────

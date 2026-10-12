@@ -193,9 +193,9 @@ class CatalogueTests(LabTestCase):
         self.assertEqual((moi['email'], moi['is_new'], moi['department']), (ALICE, True, None))
         self.assertFalse(self.alice.get('/api/me/').json()['is_new'])
         self.assertEqual(UserRecord.objects.filter(email=ALICE).count(), 1)
-        self.assertIn(ALICE, [u['email'] for u in self.bob.get('/api/users/').json()])
-        noms = [d['name'] for d in self.bob.get('/api/departments/').json()]
-        self.assertEqual(len(noms), Department.objects.count())
+        # L'annuaire hérité du gabarit (adresses de tous les comptes) n'existe plus.
+        for chemin in ('/api/users/', '/api/departments/'):
+            self.assertEqual(self.bob.get(chemin).status_code, 404)
 
 
 class CrsTests(LabTestCase):

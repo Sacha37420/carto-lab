@@ -1,7 +1,6 @@
 from django.urls import path
 from .views import (
-    MeView, DepartmentListView, UserListView,
-    LayersView, LayerDetailView, LayerGeoJSONView,
+    MeView, LayersView, LayerDetailView, LayerGeoJSONView,
     CRSListView, TransformPointView,
     ProcessingCatalogView, ProcessingRunView,
     RecipesView, RecipeDetailView, RecipeRunView,
@@ -11,8 +10,6 @@ from .views import (
 
 urlpatterns = [
     path('me/',          MeView.as_view()),
-    path('departments/', DepartmentListView.as_view()),
-    path('users/',       UserListView.as_view()),
 
     # ── Couches (Features 1, 6) ──────────────────────────────────────────────
     path('layers/',                 LayersView.as_view()),
