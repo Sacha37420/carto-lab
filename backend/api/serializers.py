@@ -9,6 +9,50 @@ class RecipeSerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'steps', 'owner_email', 'result_layer', 'created_at']
         read_only_fields = ['id', 'owner_email', 'result_layer', 'created_at']
 
+    def validate_steps(self, steps):
+        """`steps` est un JSON libre : sa forme se vérifie à l'enregistrement
+        (création comme modification), pas seulement à l'exécution. Une recette
+        vide reste permise (brouillon) ; l'existence des couches citées n'est
+        pas vérifiée ici — une couche peut disparaître après coup, l'exécution
+        le dit."""
+        from . import processing  # import tardif : processing importe les modèles
+
+        def refuse(message):
+            raise serializers.ValidationError(message)
+
+        def entier(value):
+            return isinstance(value, int) and not isinstance(value, bool)
+
+        if not isinstance(steps, list):
+            refuse("« steps » doit être une liste d'étapes.")
+        for i, step in enumerate(steps):
+            if not isinstance(step, dict):
+                refuse(f"Étape {i} : objet attendu.")
+            if not isinstance(step.get('op'), str) or step['op'] not in processing.OPERATIONS:
+                refuse(f"Étape {i} : opération inconnue.")
+            if not isinstance(step.get('params') or {}, dict):
+                refuse(f"Étape {i} : « params » doit être un objet.")
+            if not isinstance(step.get('name', ''), str):
+                refuse(f"Étape {i} : « name » doit être un texte.")
+            refs = step.get('inputs') or []
+            if not isinstance(refs, list):
+                refuse(f"Étape {i} : « inputs » doit être une liste.")
+            for ref in refs:
+                if not isinstance(ref, dict):
+                    refuse(f"Étape {i} : entrée mal formée.")
+                if 'layer' in ref:
+                    layer = ref['layer']
+                    if not (entier(layer) or (isinstance(layer, str) and layer.isdecimal())):
+                        refuse(f"Étape {i} : identifiant de couche invalide.")
+                elif 'step' in ref:
+                    if not entier(ref['step']) or not 0 <= ref['step'] < i:
+                        refuse(f"Étape {i} : référence d'étape invalide "
+                               "(une étape ne reprend que la sortie d'une étape précédente).")
+                else:
+                    refuse(f"Étape {i} : une entrée désigne une couche (« layer ») "
+                           "ou une étape (« step »).")
+        return steps
+
 
 class JobSerializer(serializers.ModelSerializer):
     class Meta:

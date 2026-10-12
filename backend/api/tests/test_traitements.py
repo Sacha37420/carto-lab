@@ -270,6 +270,79 @@ class RecettesTests(Base):
         self.assertEqual(self.bob.delete('/api/recipes/999999/').status_code, 404)
         self.assertEqual(self.bob.post('/api/recipes/999999/run/').status_code, 404)
 
+    def test_etapes_validees_a_l_enregistrement(self):
+        p = self.points.pk
+        refusees = {
+            'texte': 'buffer',
+            'objet': {'op': 'buffer'},
+            'nombre': 3,
+            'étape texte': ['buffer'],
+            'étape nulle': [None],
+            'étape sans opération': [{'inputs': [{'layer': p}]}],
+            'opération non textuelle': [{'op': 5, 'inputs': [{'layer': p}]}],
+            'opération objet': [{'op': {'a': 1}, 'inputs': [{'layer': p}]}],
+            'opération liste': [{'op': ['buffer'], 'inputs': [{'layer': p}]}],
+            'opération inconnue': [{'op': 'rm -rf', 'inputs': [{'layer': p}]}],
+            'inputs texte': [{'op': 'dissolve', 'inputs': 'abc'}],
+            'entrée texte': [{'op': 'dissolve', 'inputs': ['abc']}],
+            'entrée sans couche ni étape': [{'op': 'dissolve', 'inputs': [{'couche': p}]}],
+            'couche non entière': [{'op': 'dissolve', 'inputs': [{'layer': {'id': p}}]}],
+            'couche booléenne': [{'op': 'dissolve', 'inputs': [{'layer': True}]}],
+            'étape en texte': [{'op': 'centroid', 'inputs': [{'layer': p}]},
+                               {'op': 'dissolve', 'inputs': [{'step': '0'}]}],
+            'étape future': [{'op': 'dissolve', 'inputs': [{'step': 0}]}],
+            'étape négative': [{'op': 'centroid', 'inputs': [{'layer': p}]},
+                               {'op': 'dissolve', 'inputs': [{'step': -1}]}],
+            'paramètres non objet': [{'op': 'buffer', 'inputs': [{'layer': p}], 'params': 'x'}],
+            'nom non textuel': [{'op': 'centroid', 'inputs': [{'layer': p}], 'name': {'a': 1}}],
+        }
+        for nom, steps in refusees.items():
+            with self.subTest(cas=nom):
+                resp = self.creer(steps)
+                self.assertEqual(resp.status_code, 400, resp.content)
+                self.assertIn('steps', resp.json())
+        self.assertEqual(Recipe.objects.count(), 0)
+        # Ce qui est valable le reste : vide (brouillon), couche en texte, paramètres absents.
+        for steps in ([], [{'op': 'centroid', 'inputs': [{'layer': str(p)}]}],
+                      [{'op': 'buffer', 'inputs': [{'layer': p}], 'params': {'distance_m': 5},
+                        'name': 'Tampon'}, {'op': 'dissolve', 'inputs': [{'step': 0}]}]):
+            with self.subTest(steps=steps):
+                self.assertEqual(self.creer(steps).status_code, 201)
+
+    def test_une_recette_mal_formee_deja_en_base_ne_casse_rien(self):
+        saine = self.creer([{'op': 'centroid', 'inputs': [{'layer': self.points.pk}]}]).json()
+        for i, steps in enumerate(('buffer', ['x'], {'a': 1}, 3, [None], None if False else [[]])):
+            Recipe.objects.create(name=f'Ancienne {i}', steps=steps)
+        liste = self.alice.get('/api/recipes/')
+        self.assertEqual(liste.status_code, 200)
+        self.assertEqual(len(liste.json()), 7)
+        for recette in Recipe.objects.exclude(pk=saine['id']):
+            with self.subTest(recette=recette.name):
+                self.assertEqual(self.alice.get(f'/api/recipes/{recette.pk}/').status_code, 200)
+                self.assertEqual(self.alice.post(f'/api/recipes/{recette.pk}/run/').status_code, 400)
+                self.assertEqual(self.alice.delete(f'/api/recipes/{recette.pk}/').status_code, 204)
+        self.assertEqual(self.alice.post(f"/api/recipes/{saine['id']}/run/").status_code, 201)
+
+    def test_une_recette_ne_se_modifie_pas_par_l_api(self):
+        # Aucune route de modification : la validation à l'enregistrement ne se
+        # contourne pas par un PUT/PATCH. Si une telle route est ajoutée, elle
+        # passera par le même sérialiseur (test suivant).
+        recette = self.creer([]).json()
+        for methode in ('put', 'patch'):
+            resp = getattr(self.alice, methode)(f"/api/recipes/{recette['id']}/",
+                                                {'steps': 'buffer'}, format='json')
+            self.assertEqual(resp.status_code, 405)
+
+    def test_le_serialiseur_valide_aussi_une_modification(self):
+        from api.serializers import RecipeSerializer
+        recette = Recipe.objects.create(name='R', steps=[])
+        mauvais = RecipeSerializer(recette, data={'steps': ['buffer']}, partial=True)
+        self.assertFalse(mauvais.is_valid())
+        self.assertIn('steps', mauvais.errors)
+        bon = RecipeSerializer(recette, data={'steps': [
+            {'op': 'centroid', 'inputs': [{'layer': self.points.pk}]}]}, partial=True)
+        self.assertTrue(bon.is_valid(), bon.errors)
+
     def test_une_etape_reprend_la_sortie_d_une_autre(self):
         recette = self.creer([
             {'op': 'buffer', 'inputs': [{'layer': self.points.pk}], 'params': {'distance_m': 500}},
@@ -299,12 +372,15 @@ class RecettesTests(Base):
             'couche disparue': [{'op': 'dissolve', 'inputs': [{'layer': 999999}]}],
             'opération inconnue': [{'op': 'rm', 'inputs': [{'layer': self.points.pk}]}],
         }
+        # Créées en base : la plupart seraient désormais refusées à
+        # l'enregistrement, mais l'exécution doit tenir seule (recettes
+        # antérieures, couche supprimée depuis).
         for nom, steps in cas.items():
             with self.subTest(cas=nom):
-                recette = self.creer(steps).json()
-                resp = self.alice.post(f"/api/recipes/{recette['id']}/run/")
+                recette = Recipe.objects.create(name=nom, steps=steps)
+                resp = self.alice.post(f'/api/recipes/{recette.pk}/run/')
                 self.assertEqual(resp.status_code, 400, resp.content)
-                self.assertIsNone(Recipe.objects.get(pk=recette['id']).result_layer)
+                self.assertIsNone(Recipe.objects.get(pk=recette.pk).result_layer)
 
     def test_etapes_mal_formees_refusees_proprement(self):
         # Corrigé (C3) : `steps` est un JSON libre ; mal formé, il faisait lever
