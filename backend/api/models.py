@@ -1,6 +1,8 @@
 from django.db import models
 from django.contrib.gis.db import models as gis_models
 
+from .fields import EncryptedTextField
+
 
 class Layer(models.Model):
     """
@@ -72,7 +74,8 @@ class Feature(gis_models.Model):
 class Job(models.Model):
     """
     Suivi d'une tâche asynchrone (import Météo-France, calcul long) exposé au
-    frontend. La clé API Météo-France n'est JAMAIS stockée ici (ni ailleurs en base).
+    frontend. La clé API Météo-France n'est JAMAIS stockée ici : elle vit, chiffrée,
+    dans le coffre de son propriétaire (`MeteoCredential`).
     """
 
     PENDING = 'PENDING'
@@ -170,3 +173,25 @@ class UserRecord(models.Model):
 
     def __str__(self) -> str:
         return self.display_name or self.email
+
+
+class MeteoCredential(models.Model):
+    """
+    Coffre de la clé Météo-France d'un utilisateur (chantier « failles », I3).
+
+    Une ligne par utilisateur (`owner_email`, l'identifiant de l'utilisateur dans
+    `api/authentication.py`) : l'identifiant applicatif Météo-France est propre à
+    un compte du portail et porte son quota — la clé est personnelle, pas
+    commune au groupe. Chiffrée au repos sous `VAULT_ENCRYPTION_KEY`
+    (`EncryptedTextField`) ; jamais rendue par l'API, ni en entier ni en extrait.
+    """
+
+    owner_email = models.CharField(max_length=255, unique=True)
+    api_key = EncryptedTextField(blank=True, default='')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'meteo_credentials'
+
+    def __str__(self):
+        return f'MeteoCredential({self.owner_email})'

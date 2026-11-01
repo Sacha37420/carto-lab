@@ -10,7 +10,7 @@ from django.contrib.gis.geos import GEOSGeometry
 from django.db import transaction
 from drf_spectacular.utils import extend_schema, OpenApiParameter
 
-from .models import Department, Feature, Job, Layer, Recipe, UserRecord
+from .models import Department, Feature, Job, Layer, MeteoCredential, Recipe, UserRecord
 from .serializers import (
     DepartmentSerializer, JobSerializer, LayerSerializer, RecipeSerializer,
     UserRecordSerializer,
@@ -412,11 +412,61 @@ class MeteoOptionsView(APIView):
         })
 
 
+def _meteo_key_of(user) -> str:
+    """Clé Météo-France en clair du coffre de `user`, ou `''`.
+
+    Une valeur indéchiffrable en base est rendue `''` par `EncryptedTextField` :
+    elle compte comme absente.
+    """
+    email = getattr(user, 'email', '') or ''
+    if not email:
+        return ''
+    cred = MeteoCredential.objects.filter(owner_email=email).first()
+    return (cred.api_key or '').strip() if cred else ''
+
+
+class MeteoKeyView(APIView):
+    """
+    Coffre de la clé Météo-France de l'utilisateur connecté (chantier « failles », I3).
+
+    Coffre PAR UTILISATEUR (clé = email du jeton) : l'identifiant applicatif
+    Météo-France est propre à un compte du portail et porte son quota.
+
+    GET  /api/meteo/key/ → `{"meteo_key_configured": true|false}` — jamais la valeur,
+         ni un extrait.
+    PUT  /api/meteo/key/ `{"meteo_key": "<valeur>"}` → 204 ; chaîne vide ⇒ la ligne
+         est supprimée.
+    """
+
+    def get(self, request):
+        return Response({'meteo_key_configured': bool(_meteo_key_of(request.user))})
+
+    def put(self, request):
+        email = getattr(request.user, 'email', '') or ''
+        value = request.data.get('meteo_key') if hasattr(request.data, 'get') else None
+        if not email:
+            return Response({'detail': "Compte sans email."}, status=status.HTTP_400_BAD_REQUEST)
+        if not isinstance(value, str):
+            return Response({'detail': "Champ 'meteo_key' (chaîne) attendu."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        value = value.strip()
+        if len(value) > 4096:
+            return Response({'detail': "Clé trop longue."}, status=status.HTTP_400_BAD_REQUEST)
+        if not value:
+            MeteoCredential.objects.filter(owner_email=email).delete()
+        else:
+            MeteoCredential.objects.update_or_create(owner_email=email,
+                                                     defaults={'api_key': value})
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
 class MeteoJobLaunchView(APIView):
     """
     POST /api/meteo/jobs/ — lance la construction async d'une carte Météo-France.
-    La clé API est fournie dans le header `X-Meteo-Key` (jamais dans le corps, jamais
-    persistée) et déposée en Redis éphémère ; seul un jeton transite vers le worker.
+    La clé API est lue dans le coffre de l'utilisateur (`MeteoCredential`, chiffré,
+    cf. `MeteoKeyView`) — le navigateur ne l'envoie plus (l'en-tête `X-Meteo-Key`
+    n'est plus lu). Elle est déposée en Redis éphémère ; seul un jeton opaque
+    transite vers le worker (jamais dans les arguments de la tâche ni dans `Job`).
     Corps : { grandeur, year_start, year_end?, indicator, indicator_params?,
               classification?, n_classes?, ramp?, max_stations?, quality_thresholds? }
     `year_end` optionnel : absent ou égal à `year_start` → une seule année (comportement
@@ -425,10 +475,12 @@ class MeteoJobLaunchView(APIView):
     """
 
     def post(self, request):
-        api_key = request.headers.get('X-Meteo-Key', '').strip()
+        api_key = _meteo_key_of(request.user)
         if not api_key:
-            return Response({'detail': "Clé API Météo-France manquante (header X-Meteo-Key)."},
-                            status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {'detail': "Aucune clé Météo-France enregistrée pour votre compte : "
+                           "enregistrez-la d'abord (PUT /api/meteo/key/)."},
+                status=status.HTTP_400_BAD_REQUEST)
         d = request.data
         if d.get('grandeur') not in ind_mod.GRANDEURS:
             return Response({'detail': "Grandeur invalide."}, status=status.HTTP_400_BAD_REQUEST)

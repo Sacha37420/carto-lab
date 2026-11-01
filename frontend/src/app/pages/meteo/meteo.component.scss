@@ -59,6 +59,20 @@
     cursor: pointer;
     &:hover:not(:disabled) { background: var(--accent-deep); }
     &:disabled { background: var(--border); color: var(--text-mute); cursor: not-allowed; }
+    &.secondary {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+      &:hover:not(:disabled) { background: var(--bg); }
+      &:disabled { background: transparent; color: var(--text-mute); }
+    }
+  }
+
+  .key-state {
+    margin: 0 0 var(--space-2);
+    font-size: var(--text-sm);
+    color: var(--text-mute);
+    &.ok { color: var(--success); font-weight: 600; }
   }
 }
 

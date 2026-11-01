@@ -1,8 +1,9 @@
 """
 Stockage ÉPHÉMÈRE de la clé API Météo-France (Feature 4 / SÉCURITÉ).
 
-La clé n'est jamais en base ni dans les arguments (loggables) d'une tâche Celery :
-la vue la dépose dans Redis sous un jeton opaque à courte durée de vie ; seule ce
+La clé n'est jamais en clair en base (seul son coffre chiffré, `MeteoCredential`,
+la garde) ni dans les arguments (loggables) d'une tâche Celery : la vue la lit dans
+le coffre de l'utilisateur et la dépose dans Redis sous un jeton opaque à courte durée de vie ; seule ce
 jeton transite comme argument de tâche. Le worker consomme (GET+DEL) la clé.
 """
 import secrets

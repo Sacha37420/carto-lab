@@ -2,7 +2,8 @@
 Tâches Celery — orchestration Météo-France 4.1 → 4.4 (Feature 4).
 
 La clé API est récupérée depuis le stockage éphémère (jeton), utilisée en mémoire,
-jamais journalisée ni persistée.
+jamais journalisée ; le worker ne la persiste pas (seul le coffre chiffré de
+l'utilisateur, `MeteoCredential`, la garde — la vue l'en sort pour la déposer ici).
 """
 import time
 from datetime import date

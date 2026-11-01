@@ -29,9 +29,10 @@ class SerrureTests(LabTestCase):
         quelle que soit la méthode."""
         anonyme = APIClient()
         chemins = self.chemins()
-        self.assertEqual(len(chemins), 16)
+        # 17 depuis le coffre de la clé Météo-France (meteo/key/, chantier « failles »).
+        self.assertEqual(len(chemins), 17)
         for chemin in chemins:
-            for methode in ('get', 'post', 'delete'):
+            for methode in ('get', 'post', 'put', 'delete'):
                 with self.subTest(chemin=chemin, methode=methode):
                     resp = getattr(anonyme, methode)(chemin)
                     self.assertIn(resp.status_code, REFUS)

@@ -4,7 +4,7 @@ from .views import (
     CRSListView, TransformPointView,
     ProcessingCatalogView, ProcessingRunView,
     RecipesView, RecipeDetailView, RecipeRunView,
-    MeteoOptionsView, MeteoJobLaunchView, JobsView, JobDetailView,
+    MeteoOptionsView, MeteoKeyView, MeteoJobLaunchView, JobsView, JobDetailView,
     LayerPublishView,
 )
 
@@ -32,6 +32,7 @@ urlpatterns = [
 
     # ── Météo-France (Feature 4) + jobs async ────────────────────────────────
     path('meteo/options/',          MeteoOptionsView.as_view()),
+    path('meteo/key/',              MeteoKeyView.as_view()),
     path('meteo/jobs/',             MeteoJobLaunchView.as_view()),
     path('jobs/',                   JobsView.as_view()),
     path('jobs/<int:pk>/',          JobDetailView.as_view()),

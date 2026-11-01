@@ -7,15 +7,16 @@ Flux ASYNCHRONE documenté :
                                                                   → 202 + id-cmde
   3. GET commande/fichier?id-cmde=   → 201 (CSV prêt) | 204 (attente) | erreur
 
-Sécurité (cf. to_do point 4 / SÉCURITÉ) : la clé API est fournie par l'utilisateur,
-n'est **ni persistée ni journalisée**. On ne logge jamais la valeur de la clé ; les
-erreurs réseau n'incluent pas les headers.
+Sécurité (cf. to_do point 4 / SÉCURITÉ) : la clé API est fournie par l'utilisateur et
+persistée **uniquement** chiffrée dans son coffre serveur (`MeteoCredential`,
+`VAULT_ENCRYPTION_KEY`) ; elle n'est jamais journalisée. On ne logge jamais la valeur
+de la clé ; les erreurs réseau n'incluent pas les headers.
 
 Deux identifiants bien distincts, à ne pas confondre (vérifié en direct sur l'API) :
   - l'IDENTIFIANT APPLICATIF fourni par le portail Météo-France (chaîne Basic
     `client_id:client_secret`, telle qu'affichée dans l'exemple curl du portail) —
     longue durée de vie, c'est **cette valeur que l'utilisateur saisit et qui est
-    mémorisée** (cf. frontend, localStorage) ;
+    mémorisée**, chiffrée, dans son coffre serveur (`MeteoCredential`) ;
   - le JETON D'ACCÈS OAuth2 (Bearer), obtenu en échangeant l'identifiant ci-dessus
     via `fetch_access_token()` (POST /token, grant_type=client_credentials) — courte
     durée de vie (~1h, non stocké), c'est lui qui s'utilise en `Authorization: Bearer`

@@ -28,13 +28,14 @@ export class MeteoComponent implements OnInit, OnDestroy {
   err = signal('');
 
   // Identifiant applicatif Météo-France (chaîne Basic du portail, PAS un jeton
-  // Bearer déjà émis — celui-ci expire en 1h). Conservé dans le navigateur
-  // (localStorage) pour éviter à l'utilisateur de le ressaisir à chaque session.
-  // Ne part jamais vers le backend hors du header X-Meteo-Key d'un lancement, et
-  // n'est jamais persisté côté serveur (cf. secret_store.py — jeton Redis
-  // éphémère ; l'échange contre un jeton Bearer se fait côté worker Celery, cf.
-  // meteo_client.fetch_access_token).
-  apiKey = localStorage.getItem('mf_key') ?? '';
+  // Bearer déjà émis — celui-ci expire en 1h). Gardé, chiffré, dans le coffre
+  // serveur de l'utilisateur (PUT/GET /api/meteo/key/) : le navigateur ne le
+  // conserve plus nulle part et ne l'envoie plus au lancement. Le serveur ne le
+  // rend jamais — on n'en connaît que l'état (enregistré ou non).
+  keyInput = '';
+  keyConfigured = signal<boolean | null>(null);   // null : état pas encore connu
+  keyBusy = signal(false);
+  keyErr = signal('');
 
   form = {
     grandeur: 'temperature',
@@ -62,6 +63,10 @@ export class MeteoComponent implements OnInit, OnDestroy {
   private poll: ReturnType<typeof setInterval> | null = null;
 
   ngOnInit(): void {
+    // Ancienne clé gardée en clair dans le navigateur (avant le coffre serveur) :
+    // effacée sans être envoyée — l'utilisateur la ressaisit une fois.
+    localStorage.removeItem('mf_key');
+    this.loadKeyStatus();
     this.loadOptions();
     this.reloadJobs();
   }
@@ -93,7 +98,29 @@ export class MeteoComponent implements OnInit, OnDestroy {
     });
   }
 
-  saveKey(): void { localStorage.setItem('mf_key', this.apiKey); }
+  loadKeyStatus(): void {
+    this.api.getMeteoKeyStatus().subscribe({
+      next: (r) => this.keyConfigured.set(!!r.meteo_key_configured),
+      error: () => this.keyErr.set("Impossible de lire l'état de votre clé."),
+    });
+  }
+
+  /** Enregistre la saisie dans le coffre (chaîne vide ⇒ efface la clé). */
+  saveKey(value: string): void {
+    this.keyErr.set('');
+    this.keyBusy.set(true);
+    this.api.setMeteoKey(value.trim()).subscribe({
+      next: () => {
+        this.keyBusy.set(false);
+        this.keyInput = '';
+        this.keyConfigured.set(value.trim() !== '');
+      },
+      error: (e) => {
+        this.keyBusy.set(false);
+        this.keyErr.set(e?.error?.detail ?? "Échec de l'enregistrement de la clé.");
+      },
+    });
+  }
 
   get indicatorParamDefs(): OpParam[] {
     return this.options()?.indicators.find((i) => i.name === this.form.indicator)?.params ?? [];
@@ -105,14 +132,16 @@ export class MeteoComponent implements OnInit, OnDestroy {
 
   launch(): void {
     this.err.set('');
-    if (!this.apiKey) { this.err.set('Saisissez votre clé API Météo-France.'); return; }
+    if (this.keyConfigured() === false) {
+      this.err.set('Enregistrez d\'abord votre identifiant Météo-France.');
+      return;
+    }
     const yearEnd = this.form.periodMode ? this.form.yearEnd : this.form.year;
     if (yearEnd < this.form.year) {
       this.err.set("L'année de fin doit être postérieure ou égale à l'année de début.");
       return;
     }
-    this.saveKey();
-    this.api.launchMeteoJob(this.apiKey, {
+    this.api.launchMeteoJob({
       grandeur: this.form.grandeur,
       year_start: this.form.year,
       year_end: yearEnd,

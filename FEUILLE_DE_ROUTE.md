@@ -54,16 +54,18 @@ Des tables laissées avant `9cd3d00` sont peut-être encore publiées par `pg_fe
 - [ ] 0 table orpheline ; la collection `pg_featureserv` correspondante répond 404
 **Vérifié le :**
 
-## Lot 4 — Gabarit front et carte en thème sombre   ·   statut : à faire
+## Lot 4 — Gabarit front et carte en thème sombre   ·   statut : en cours
 **Objectif :** même comportement que le gabarit corrigé (T3), carte lisible en sombre.
 **Tâches :**
-- [ ] `redirectUri` sur la page courante (`keycloak.service.ts:32` utilise `env.appUrl`)
-- [ ] Polices en chemin relatif ; `tokenBases()` ; PKCE
+- [x] `redirectUri` sur la page courante (`core/redirect-uri.ts`, copie de lab-admin : même origine et sous `/carto-lab/`, sinon `appUrl`)
+- [x] Polices en chemin relatif (`styles.scss`) ; `tokenBases()` (`core/env.ts` : la seule API de l'app ; `core/token-scope.ts`, copie de lab-admin) ; `pkceMethod: 'S256'` (front) — `--pkce` sur le client reste à poser par l'architecte après déploiement
+- [x] Ports publiés liés à `${LAB_BIND_ADDR:-127.0.0.1}` (chantier « failles », I1)
 - [ ] Palette OpenLayers (`map.component.ts:39,188,190`) lue depuis les tokens CSS (`getComputedStyle`)
 - [ ] Retirer `Department` du gabarit (`models.py:139`) s'il est mort
 **Tests à passer avant de clore le lot :**
 - [ ] Un lien direct vers `/carto-lab/meteo` y revient après la connexion ; WOFF2 en 200 ; carte vérifiée en sombre
-**Vérifié le :**
+**Vérifié le :** 2026-11-01 — non déployé. Chantier « failles » (secteur E) : image candidate `carto-lab-frontend:candidat` construite (depuis une copie propre du dossier, sans `node_modules`) ; le bundle porte `pkceMethod:"S256"`, les WOFF2 sont référencés en `./media/…` (0 `/assets/fonts`) ; `docker compose config` rend `host_ip: 127.0.0.1` pour 8091 et 4209. Les tests du lot demandent le déploiement. Restent la palette OpenLayers et `Department`.
+Les tests du lot demandent le déploiement. Restent la palette OpenLayers et `Department` (hors chantier).
 
 ## Lot 5 — Recettes et documentation   ·   statut : à faire
 **Objectif :** des recettes fiables et une app documentée.
@@ -73,3 +75,21 @@ Des tables laissées avant `9cd3d00` sont peut-être encore publiées par `pg_fe
 **Tests à passer avant de clore le lot :**
 - [ ] Une recette citant une couche inexistante → 400
 **Vérifié le :**
+
+## Lot 6 — Clé Météo-France dans un coffre serveur   ·   statut : livré
+**Objectif :** la clé Météo-France ne vit plus dans le navigateur (`localStorage['mf_key']`, envoyée à
+chaque lancement dans l'en-tête `X-Meteo-Key`) mais, chiffrée, dans un coffre serveur (chantier
+« failles », F6 → I3). Coffre **par utilisateur** (clé = email du jeton) : l'identifiant applicatif
+Météo-France est propre à un compte du portail et porte son quota — ce n'est pas un secret de groupe.
+**Tâches :**
+- [x] `api/fields.py` (`EncryptedTextField` sous `VAULT_ENCRYPTION_KEY`, copie de restauration) ; `VAULT_ENCRYPTION_KEY` lue sans valeur par défaut
+- [x] Modèle `MeteoCredential` (`owner_email` unique, `api_key` chiffrée) et migration `0008_meteocredential`
+- [x] `GET /api/meteo/key/` → `{"meteo_key_configured": true|false}` ; `PUT /api/meteo/key/` `{"meteo_key": "…"}` → 204, chaîne vide ⇒ ligne supprimée
+- [x] `POST /api/meteo/jobs/` lit la clé dans le coffre de l'appelant (400 si absente ou indéchiffrable) ; l'en-tête `X-Meteo-Key` n'est plus lu ; worker inchangé (jeton Redis éphémère)
+- [x] Page Météo : état « clé enregistrée / aucune clé », champ mot de passe, boutons Enregistrer / Effacer ; plus aucune clé en `localStorage` (l'ancienne `mf_key` est effacée à l'ouverture, sans être envoyée)
+**Tests à passer avant de clore le lot :**
+- [x] `GET` ne rend jamais la valeur ; `PUT` puis `GET` → configurée ; `PUT ""` → non configurée, ligne supprimée
+- [x] Valeur en base chiffrée (`gAAAAA…`, sans la clé) ; valeur indéchiffrable traitée comme absente (lancement 400)
+- [x] Un autre utilisateur ne voit pas la clé et ne lance pas avec ; lancement sans clé → 400 ; l'en-tête seul ne suffit plus ; la clé déposée pour le worker est celle du coffre
+**Vérifié le :** 2026-11-01 — non déployé. `ESSAI_CMD='python manage.py test --settings=config.settings_test' bash chantiers/tests/essai.sh carto-lab` : 121 tests OK (dont le coffre et le lancement dans `api/tests/test_meteo.py` ; inventaire des routes de `test_serrure.py` passé à 17, PUT ajouté aux méthodes refusées à un anonyme) ; `makemigrations --check` : aucun changement ; bundle front sans `X-Meteo-Key`.
+

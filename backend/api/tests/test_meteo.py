@@ -1,16 +1,19 @@
 """Météo-France : la clé de l'utilisateur, la tâche asynchrone, le client HTTP,
 le CSV quotidien, la qualité, les indicateurs et la classification.
 
-La clé Météo-France appartient à l'utilisateur. Elle arrive dans l'en-tête
-``X-Meteo-Key``, attend dans Redis sous un jeton opaque à durée limitée, est
-consommée une fois par le worker — et n'est jamais en base, ni dans les
-arguments de la tâche, ni dans un message.
+La clé Météo-France appartient à l'utilisateur. Elle est enregistrée, chiffrée,
+dans son coffre serveur (``PUT /api/meteo/key/``, ``MeteoCredential``) — le
+navigateur ne l'envoie plus au lancement. Le lancement la sort du coffre, la
+dépose dans Redis sous un jeton opaque à durée limitée, consommé une fois par
+le worker — elle n'est jamais en clair en base, ni dans les arguments de la
+tâche, ni dans un message.
 """
 from datetime import date, datetime, timedelta, timezone
 from unittest import mock
 
 import numpy as np
 import requests
+from django.db import connection
 from django.test import SimpleTestCase
 
 from api import choropleth, indicators, meteo_client, secret_store, tasks
@@ -18,12 +21,91 @@ from api.meteo_client import (
     MeteoClient, MeteoError, MeteoQuotaError, _parse_retry_after, combine_period,
     parse_daily_csv, station_lonlat,
 )
-from api.models import Job, Layer
+from api.models import Job, Layer, MeteoCredential
 
-from .helpers import ALICE, LabTestCase, Reponse
+from .helpers import ALICE, BOB, LabTestCase, Reponse
 
 CLE = 'Y2xpZW50OnNlY3JldC1tZXRlbw=='          # « identifiant applicatif » de l'utilisateur
 CORPS = {'grandeur': 'temperature', 'year_start': 2023, 'indicator': 'mean'}
+
+
+COFFRE = '/api/meteo/key/'
+
+
+class CoffreTests(LabTestCase):
+    """``GET/PUT /api/meteo/key/`` : coffre par utilisateur, valeur jamais rendue."""
+
+    def enregistrer(self, valeur, client=None):
+        return (client or self.alice).put(COFFRE, {'meteo_key': valeur}, format='json')
+
+    def etat(self, client=None):
+        resp = (client or self.alice).get(COFFRE)
+        self.assertEqual(resp.status_code, 200, resp.content)
+        return resp
+
+    def test_vide_au_depart(self):
+        self.assertEqual(self.etat().json(), {'meteo_key_configured': False})
+
+    def test_enregistrer_puis_lire_ne_rend_jamais_la_valeur(self):
+        resp = self.enregistrer(CLE)
+        self.assertEqual(resp.status_code, 204)
+        self.assertEqual(resp.content, b'')
+        lu = self.etat()
+        self.assertEqual(lu.json(), {'meteo_key_configured': True})
+        corps = lu.content.decode()
+        self.assertNotIn(CLE, corps)
+        for extrait in (CLE[:6], CLE[-6:]):
+            self.assertNotIn(extrait, corps)
+        self.assertEqual(MeteoCredential.objects.get().owner_email, ALICE)
+        self.assertEqual(MeteoCredential.objects.get().api_key, CLE)
+
+    def test_remplacer_garde_une_seule_ligne(self):
+        self.enregistrer('premiere')
+        self.enregistrer(CLE)
+        self.assertEqual(MeteoCredential.objects.count(), 1)
+        self.assertEqual(MeteoCredential.objects.get().api_key, CLE)
+
+    def test_chaine_vide_supprime_la_ligne(self):
+        self.enregistrer(CLE)
+        for vide in ('', '   '):
+            with self.subTest(vide=vide):
+                self.assertEqual(self.enregistrer(vide).status_code, 204)
+                self.assertEqual(self.etat().json(), {'meteo_key_configured': False})
+                self.assertFalse(MeteoCredential.objects.filter(owner_email=ALICE).exists())
+
+    def test_corps_invalide(self):
+        for corps in ({}, {'meteo_key': None}, {'meteo_key': 42}, {'meteo_key': ['a']},
+                      {'meteo_key': 'x' * 5000}):
+            with self.subTest(corps=str(corps)[:40]):
+                self.assertEqual(self.alice.put(COFFRE, corps, format='json').status_code, 400)
+        self.assertEqual(MeteoCredential.objects.count(), 0)
+
+    def test_methodes_refusees(self):
+        self.assertEqual(self.alice.post(COFFRE, {'meteo_key': CLE}, format='json').status_code, 405)
+        self.assertEqual(self.alice.delete(COFFRE).status_code, 405)
+
+    def test_chiffree_en_base(self):
+        self.enregistrer(CLE)
+        with connection.cursor() as cur:
+            cur.execute('SELECT api_key FROM meteo_credentials WHERE owner_email = %s', [ALICE])
+            (brut,) = cur.fetchone()
+        self.assertTrue(brut.startswith('gAAAAA'), brut[:10])
+        self.assertNotIn(CLE, brut)
+
+    def test_un_autre_utilisateur_ne_voit_pas_la_cle(self):
+        self.enregistrer(CLE)
+        self.assertEqual(self.etat(self.bob).json(), {'meteo_key_configured': False})
+        # B qui efface « sa » clé ne touche pas à celle de A.
+        self.assertEqual(self.enregistrer('', client=self.bob).status_code, 204)
+        self.assertEqual(self.etat().json(), {'meteo_key_configured': True})
+
+    def test_valeur_corrompue_comptee_absente(self):
+        self.enregistrer(CLE)
+        with connection.cursor() as cur:
+            # Jeton Fernet bien formé mais sous une autre clé : indéchiffrable.
+            cur.execute('UPDATE meteo_credentials SET api_key = %s',
+                        ['gAAAAABfAutreCleQuiNeSeDechiffrePas-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'])
+        self.assertEqual(self.etat().json(), {'meteo_key_configured': False})
 
 
 class LancementTests(LabTestCase):
@@ -31,22 +113,54 @@ class LancementTests(LabTestCase):
     def setUp(self):
         super().setUp()
         self.delay = self._patch(mock.patch('api.views.build_meteo_choropleth.delay'))
+        self.alice.put(COFFRE, {'meteo_key': CLE}, format='json')
 
-    def lancer(self, corps=None, cle=CLE, client=None):
-        entetes = {'HTTP_X_METEO_KEY': cle} if cle is not None else {}
+    def lancer(self, corps=None, client=None, **entetes):
         return (client or self.alice).post('/api/meteo/jobs/', CORPS if corps is None else corps,
                                            format='json', **entetes)
 
-    def test_sans_cle_rien_n_est_lance(self):
-        for cle in (None, '', '   '):
-            with self.subTest(cle=cle):
-                self.assertEqual(self.lancer(cle=cle).status_code, 400)
-        # Une clé glissée dans le corps n'est pas acceptée à la place de l'en-tête.
-        self.assertEqual(self.lancer({**CORPS, 'api_key': CLE, 'X-Meteo-Key': CLE}, cle=None)
-                         .status_code, 400)
+    def assert_rien_lance(self):
         self.assertEqual(Job.objects.count(), 0)
         self.delay.assert_not_called()
         self.assertEqual(self.redis.data, {})
+
+    def test_sans_cle_rien_n_est_lance(self):
+        MeteoCredential.objects.all().delete()
+        resp = self.lancer()
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('/api/meteo/key/', resp.json()['detail'])
+        # Une clé glissée dans le corps n'est pas acceptée à la place du coffre.
+        self.assertEqual(self.lancer({**CORPS, 'api_key': CLE, 'meteo_key': CLE,
+                                      'X-Meteo-Key': CLE}).status_code, 400)
+        self.assert_rien_lance()
+
+    def test_l_en_tete_seul_ne_suffit_plus(self):
+        MeteoCredential.objects.all().delete()
+        self.assertEqual(self.lancer(HTTP_X_METEO_KEY=CLE).status_code, 400)
+        self.assert_rien_lance()
+
+    def test_l_en_tete_est_ignore_quand_le_coffre_est_plein(self):
+        self.assertEqual(self.lancer(HTTP_X_METEO_KEY='cle-de-l-en-tete').status_code, 202)
+        (_, jeton, _), _ = self.delay.call_args
+        self.assertEqual(self.redis.data, {f'mfkey:{jeton}': CLE.encode()})
+
+    def test_bob_ne_lance_pas_avec_la_cle_d_alice(self):
+        self.assertEqual(self.lancer(client=self.bob).status_code, 400)
+        self.assert_rien_lance()
+
+    def test_chacun_lance_avec_sa_propre_cle(self):
+        self.bob.put(COFFRE, {'meteo_key': 'cle-de-bob'}, format='json')
+        self.assertEqual(self.lancer(client=self.bob).status_code, 202)
+        (_, jeton, _), _ = self.delay.call_args
+        self.assertEqual(self.redis.data, {f'mfkey:{jeton}': b'cle-de-bob'})
+        self.assertEqual(Job.objects.get().owner_email, BOB)
+
+    def test_valeur_corrompue_en_base_lancement_refuse(self):
+        with connection.cursor() as cur:
+            cur.execute('UPDATE meteo_credentials SET api_key = %s',
+                        ['gAAAAABfAutreCleQuiNeSeDechiffrePas-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'])
+        self.assertEqual(self.lancer().status_code, 400)
+        self.assert_rien_lance()
 
     def test_demande_invalide(self):
         cas = [
@@ -80,7 +194,7 @@ class LancementTests(LabTestCase):
         self.assertEqual((job_id, params, kwargs), (job.pk, job.params, {}))
         self.assertNotEqual(jeton, CLE)
         self.assertGreaterEqual(len(jeton), 24)
-        # La clé attend dans Redis, sous ce jeton, pour une durée bornée.
+        # La clé du coffre attend dans Redis, sous ce jeton, pour une durée bornée.
         self.assertEqual(self.redis.data, {f'mfkey:{jeton}': CLE.encode()})
         self.assertEqual(self.redis.ttl[f'mfkey:{jeton}'], 3600)
         for texte in (resp.content.decode(), str(job.params), job.message,

@@ -19,17 +19,35 @@
     <section class="card" *ngIf="options() as opts">
       <h3>Paramètres</h3>
 
-      <label>Identifiant Météo-France
-        <span class="sec">(chaîne Basic du portail, mémorisée dans ce navigateur — jamais stockée en base)</span>
+      <label for="mf-key">Identifiant Météo-France
+        <span class="sec">(chaîne Basic du portail, gardée chiffrée sur le serveur, propre à votre compte — jamais réaffichée)</span>
       </label>
+      <p class="key-state" [class.ok]="keyConfigured() === true" aria-live="polite">
+        <ng-container [ngSwitch]="keyConfigured()">
+          <ng-container *ngSwitchCase="true">Clé enregistrée.</ng-container>
+          <ng-container *ngSwitchCase="false">Aucune clé enregistrée.</ng-container>
+          <ng-container *ngSwitchDefault>État de la clé…</ng-container>
+        </ng-container>
+      </p>
       <p class="hint">
         Sur le portail Météo-France, copiez la valeur après <code>Authorization: Basic</code>
         dans l'exemple curl de génération de jeton (<code>POST /token</code>) —
         <strong>pas</strong> le jeton lui-même, qui expire au bout d'1h. L'application se
         charge d'échanger cet identifiant contre un jeton à chaque lancement.
       </p>
-      <input type="password" [(ngModel)]="apiKey" (blur)="saveKey()"
-             placeholder="Identifiant Basic (client_id:client_secret encodé)" autocomplete="off" />
+      <input id="mf-key" type="password" [(ngModel)]="keyInput"
+             [placeholder]="keyConfigured() ? 'Saisir une nouvelle clé pour la remplacer' : 'Identifiant Basic (client_id:client_secret encodé)'"
+             autocomplete="off" />
+      <div class="two">
+        <button type="button" (click)="saveKey(keyInput)" [disabled]="keyBusy() || !keyInput.trim()">
+          Enregistrer la clé
+        </button>
+        <button type="button" class="secondary" (click)="saveKey('')"
+                [disabled]="keyBusy() || keyConfigured() !== true">
+          Effacer la clé
+        </button>
+      </div>
+      <p class="err" *ngIf="keyErr()">{{ keyErr() }}</p>
 
       <label>Grandeur</label>
       <select [(ngModel)]="form.grandeur">

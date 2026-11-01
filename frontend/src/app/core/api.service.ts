@@ -1,10 +1,8 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient, HttpHeaders } from '@angular/common/http';
+import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { apiUrl } from './env';
 
-interface EnvWindow {
-  __env?: { apiUrl?: string };
-}
 
 export interface LayerMeta {
   id: number;
@@ -122,8 +120,7 @@ export class ApiService {
   private http = inject(HttpClient);
 
   private get base(): string {
-    return (window as unknown as EnvWindow).__env?.apiUrl
-      ?? 'http://localhost:8091';
+    return apiUrl();
   }
 
   getMe(): Observable<unknown> {
@@ -204,10 +201,19 @@ export class ApiService {
     return this.http.get<MeteoOptions>(`${this.base}/api/meteo/options/`);
   }
 
-  /** Lance un job. La clé API part dans le header X-Meteo-Key (jamais dans le corps). */
-  launchMeteoJob(apiKey: string, body: MeteoJobRequest): Observable<Job> {
-    const headers = new HttpHeaders({ 'X-Meteo-Key': apiKey });
-    return this.http.post<Job>(`${this.base}/api/meteo/jobs/`, body, { headers });
+  /** État du coffre de la clé Météo-France de l'utilisateur (jamais la valeur). */
+  getMeteoKeyStatus(): Observable<{ meteo_key_configured: boolean }> {
+    return this.http.get<{ meteo_key_configured: boolean }>(`${this.base}/api/meteo/key/`);
+  }
+
+  /** Enregistre la clé dans le coffre serveur ; chaîne vide ⇒ l'efface. */
+  setMeteoKey(value: string): Observable<void> {
+    return this.http.put<void>(`${this.base}/api/meteo/key/`, { meteo_key: value });
+  }
+
+  /** Lance un job. La clé est lue par le serveur dans le coffre de l'utilisateur. */
+  launchMeteoJob(body: MeteoJobRequest): Observable<Job> {
+    return this.http.post<Job>(`${this.base}/api/meteo/jobs/`, body);
   }
 
   getJobs(): Observable<Job[]> {
