@@ -63,7 +63,7 @@ Des tables laissées avant `9cd3d00` sont peut-être encore publiées par `pg_fe
 - [ ] Palette OpenLayers (`map.component.ts:39,188,190`) lue depuis les tokens CSS (`getComputedStyle`)
 - [ ] Retirer `Department` du gabarit (`models.py:139`) s'il est mort
 **Tests à passer avant de clore le lot :**
-- [ ] Un lien direct vers `/carto-lab/meteo` y revient après la connexion ; WOFF2 en 200 ; carte vérifiée en sombre
+- [ ] Un lien direct vers `/carto-lab/meteo` y revient après la connexion ; WOFF2 en 200 ; carte vérifiée en sombre — *2026-11-01 : lien direct et WOFF2 vérifiés ; reste la carte en thème sombre*
 **Vérifié le :** 2026-11-01 — non déployé. Chantier « failles » (secteur E) : image candidate `carto-lab-frontend:candidat` construite (depuis une copie propre du dossier, sans `node_modules`) ; le bundle porte `pkceMethod:"S256"`, les WOFF2 sont référencés en `./media/…` (0 `/assets/fonts`) ; `docker compose config` rend `host_ip: 127.0.0.1` pour 8091 et 4209. Les tests du lot demandent le déploiement. Restent la palette OpenLayers et `Department`.
 Les tests du lot demandent le déploiement. Restent la palette OpenLayers et `Department` (hors chantier).
 
