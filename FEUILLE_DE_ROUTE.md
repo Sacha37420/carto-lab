@@ -93,3 +93,10 @@ Météo-France est propre à un compte du portail et porte son quota — ce n'es
 - [x] Un autre utilisateur ne voit pas la clé et ne lance pas avec ; lancement sans clé → 400 ; l'en-tête seul ne suffit plus ; la clé déposée pour le worker est celle du coffre
 **Vérifié le :** 2026-11-01 — non déployé. `ESSAI_CMD='python manage.py test --settings=config.settings_test' bash chantiers/tests/essai.sh carto-lab` : 121 tests OK (dont le coffre et le lancement dans `api/tests/test_meteo.py` ; inventaire des routes de `test_serrure.py` passé à 17, PUT ajouté aux méthodes refusées à un anonyme) ; `makemigrations --check` : aucun changement ; bundle front sans `X-Meteo-Key`.
 
+
+## Mise en service — chantier « failles » (2026-11-01)
+Les mentions « non déployé » ci-dessus datent d'avant cette mise en service. Image construite pendant
+que l'ancienne tournait, `scripts/app-test.sh` : 121 tests OK, puis `up -d --no-build` ; ports
+publiés sur `127.0.0.1` ; client Keycloak passé en PKCE S256 exigé, URI de retour réduites à celles de
+l'app (`create-app-client.sh --pkce --prune-uris`) ; cloisonnement `lab-runner` 3/3 avant et après le durcissement du client, puis de nouveau 3/3 sur Keycloak 26.8.1.
+Restent les vérifications en navigateur réel notées dans les lots (images, coffres de clés, envois).
