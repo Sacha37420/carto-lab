@@ -38,6 +38,10 @@ du lab). [C] constaté, [D] déduit.
 - [ ] Ⓟ Décision d'architecte : passer à `/carto-lab-api/ogc`, ou ajouter une exception déclarée au validateur
 - [ ] Renommer les services en `carto-lab-*` ; épingler `pg_featureserv` sur une version
 - [ ] Mettre à jour `setup-ogc-auth.sh` et la configuration QGIS documentée
+  - [C, relecture du 2026-11-08] `setup-ogc-auth.sh` ne marche plus depuis le passage dans `deploiement/` :
+    il prend pour racine du lab le parent de son dossier (`setup-ogc-auth.sh:25`, `ROOT_DIR`), soit
+    `deploiement/`, et s'arrête sur « create-app-client.sh introuvable » (`:28`, `:31`). Son usage
+    (`:14`, `bash carto-lab/setup-ogc-auth.sh`) date d'avant le déplacement. Code non modifié cette nuit.
 **Tests à passer avant de clore le lot :**
 - [ ] `validate-app.sh carto-lab` rend 0
 - [ ] QGIS ouvre une couche publiée ; un compte hors `developers` est refusé par oauth2-proxy
@@ -71,6 +75,10 @@ Les tests du lot demandent le déploiement. Restent la palette OpenLayers et `De
 **Objectif :** des recettes fiables et une app documentée.
 **Tâches :**
 - [ ] Vérifier, à l'enregistrement d'une recette, que les couches citées existent (400 sinon). Les recettes restent non modifiables (405, voulu).
+  - [D, relecture du 2026-11-08] Ⓟ Contredit un choix écrit dans le code : `RecipeSerializer.validate_steps`
+    (`backend/api/serializers.py:12-17`, commit `cabeb86`) vérifie la forme des étapes et dit ne pas
+    vérifier l'existence des couches « à dessein » (une couche peut disparaître après coup ; l'exécution
+    le dit). À trancher avant de coder.
 - [ ] `README.md` : couches, rasters, calculs, recettes, accès QGIS, chaîne Météo-France
 **Tests à passer avant de clore le lot :**
 - [ ] Une recette citant une couche inexistante → 400
