@@ -11,7 +11,7 @@
 #
 # Prérequis : Keycloak démarré, jq installé.
 # Usage :
-#   bash carto-lab/setup-ogc-auth.sh
+#   bash deploiement/carto-lab/setup-ogc-auth.sh   (depuis la racine du lab)
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
@@ -22,7 +22,16 @@ warn()    { echo -e "${YELLOW}⚠${NC} $*"; }
 die()     { echo -e "${RED}✗${NC} $*" >&2; exit 1; }
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-ROOT_DIR="$(dirname "$SCRIPT_DIR")"
+# Racine du cadriciel : LAB_ROOT s'il est posé, sinon le premier parent qui
+# porte scripts/create-app-client.sh. L'app vit dans deploiement/<app> depuis la
+# bascule du 2026-10-11 : le simple parent du dossier n'est plus la racine.
+ROOT_DIR="${LAB_ROOT:-}"
+if [[ -z "$ROOT_DIR" ]]; then
+  ROOT_DIR="$(dirname "$SCRIPT_DIR")"
+  while [[ "$ROOT_DIR" != "/" && ! -f "$ROOT_DIR/scripts/create-app-client.sh" ]]; do
+    ROOT_DIR="$(dirname "$ROOT_DIR")"
+  done
+fi
 ENV_FILE="${SCRIPT_DIR}/.env"
 SSO_ENV="${ROOT_DIR}/sso-lab/.env"
 CREATE_CLIENT="${ROOT_DIR}/scripts/create-app-client.sh"

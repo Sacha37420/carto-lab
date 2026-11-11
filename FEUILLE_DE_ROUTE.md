@@ -42,6 +42,8 @@ du lab). [C] constaté, [D] déduit.
     il prend pour racine du lab le parent de son dossier (`setup-ogc-auth.sh:25`, `ROOT_DIR`), soit
     `deploiement/`, et s'arrête sur « create-app-client.sh introuvable » (`:28`, `:31`). Son usage
     (`:14`, `bash carto-lab/setup-ogc-auth.sh`) date d'avant le déplacement. Code non modifié cette nuit.
+  - [x] 2026-11-11 : racine trouvée en remontant jusqu'à `scripts/create-app-client.sh` (ou `LAB_ROOT`),
+    usage corrigé. Non rejoué contre Keycloak (le client `carto-ogc` existe déjà). Reste : chemin OGC et QGIS.
 **Tests à passer avant de clore le lot :**
 - [ ] `validate-app.sh carto-lab` rend 0
 - [ ] QGIS ouvre une couche publiée ; un compte hors `developers` est refusé par oauth2-proxy
