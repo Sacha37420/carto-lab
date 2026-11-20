@@ -389,7 +389,13 @@ def _polygonize(cur, out, ins, params):
 
     tmp = storage_client.download_to_tempfile(_auth_header_var.get(), layer.raster_path)
     try:
-        with rasterio.open(tmp.name) as src:
+        # Pilote GeoTIFF seul, comme à l'import (geo.RASTER_DRIVER) : un VRT déposé dans storage
+        # ferait lire un fichier du conteneur, rendu ici en valeurs de polygones.
+        try:
+            src_cm = rasterio.open(tmp.name, driver='GTiff')
+        except rasterio.errors.RasterioIOError:
+            raise ProcessingError("Le raster source n'est pas un GeoTIFF lisible.") from None
+        with src_cm as src:
             if band < 1 or band > src.count:
                 raise ProcessingError(f"Bande {band} invalide (la couche en a {src.count}).")
             arr = src.read(band)

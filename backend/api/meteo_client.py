@@ -106,7 +106,8 @@ def fetch_access_token(app_credentials: str, token_url: str | None = None, timeo
             headers={'Authorization': f'Basic {app_credentials}'}, timeout=timeout,
         )
     except requests.RequestException as exc:
-        raise MeteoError(f"Erreur réseau vers le portail Météo-France : {exc}") from exc
+        # Message fixe : le texte d'une exception `requests` porte l'URL demandée (rendu dans le job).
+        raise MeteoError(f"Erreur réseau vers le portail Météo-France ({type(exc).__name__}).") from exc
     if r.status_code != 200:
         raise MeteoError(
             f"Identifiant Météo-France refusé par le portail (HTTP {r.status_code}). "
@@ -168,8 +169,8 @@ class MeteoClient:
             return self._session.get(url, headers=self._headers(accept),
                                      params=params, timeout=self.timeout)
         except requests.RequestException as exc:
-            # exc peut contenir l'URL mais jamais les headers → pas de fuite de clé.
-            raise MeteoError(f"Erreur réseau vers Météo-France : {exc}") from exc
+            # exc porte l'URL demandée (jamais les headers) : message fixe, rendu dans le job.
+            raise MeteoError(f"Erreur réseau vers Météo-France ({type(exc).__name__}).") from exc
 
     def _get(self, path, params=None, accept='application/json'):
         url = f"{self.base}/{path.lstrip('/')}"

@@ -9,6 +9,16 @@ class RecipeSerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'steps', 'owner_email', 'result_layer', 'created_at']
         read_only_fields = ['id', 'owner_email', 'result_layer', 'created_at']
 
+    def to_representation(self, instance):
+        # Pas d'annuaire : la liste des recettes rendait l'adresse de chaque auteur à tout le groupe.
+        # L'auteur seul voit la sienne ; sans `request` dans le contexte, personne.
+        data = super().to_representation(instance)
+        request = self.context.get('request')
+        email = getattr(getattr(request, 'user', None), 'email', '') or ''
+        if not email or data.get('owner_email') != email:
+            data['owner_email'] = ''
+        return data
+
     def validate_steps(self, steps):
         """`steps` est un JSON libre : sa forme se vérifie à l'enregistrement
         (création comme modification), pas seulement à l'exécution. Une recette

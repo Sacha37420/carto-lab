@@ -27,6 +27,14 @@ VECTOR_EXTS = {'.geojson', '.json', '.gpkg', '.kml', '.kmz', '.gml', '.zip', '.c
 RASTER_EXTS = {'.tif', '.tiff'}
 ALLOWED_EXTS = VECTOR_EXTS | RASTER_EXTS
 
+# GDAL choisit son pilote d'après le CONTENU du fichier, pas son extension : un « .geojson »
+# ou un « .tif » qui est en fait un VRT désigne d'autres sources (fichier du conteneur, adresse
+# /vsicurl/ du réseau interne), lues puis rendues comme entités. Seuls les pilotes des formats
+# annoncés sont acceptés.
+OGR_DRIVERS = {'GeoJSON', 'GeoJSONSeq', 'ESRIJSON', 'TopoJSON', 'GPKG', 'KML', 'LIBKML', 'GML',
+               'ESRI Shapefile'}
+RASTER_DRIVER = 'GTiff'
+
 # Colonnes candidates pour un CSV ponctuel (insensible à la casse).
 _LAT_KEYS = {'lat', 'latitude', 'y'}
 _LON_KEYS = {'lon', 'lng', 'long', 'longitude', 'x'}
@@ -74,6 +82,8 @@ def _parse_ogr(source: str, force_srid=None):
     `features` = liste de (GEOSGeometry 4326, dict properties).
     """
     ds = DataSource(source)
+    if ds.driver.name not in OGR_DRIVERS:
+        raise LayerImportError("Format de fichier non pris en charge.")
     if len(ds) == 0:
         raise LayerImportError("Aucune couche lisible dans le fichier.")
     layer = ds[0]
@@ -249,10 +259,12 @@ def _import_raster(uploaded_file, name: str, owner_email: str = '', auth_header:
         tmp.flush()
 
         try:
-            src_cm = rasterio.open(tmp.name)
+            src_cm = rasterio.open(tmp.name, driver=RASTER_DRIVER)
         except rasterio.errors.RasterioIOError as exc:
             raise LayerImportError("Fichier illisible : ce n'est pas un GeoTIFF valide.") from exc
         with src_cm as src:
+            if src.driver != RASTER_DRIVER:
+                raise LayerImportError("Fichier illisible : ce n'est pas un GeoTIFF valide.")
             source_srid = None
             if src.crs is not None:
                 try:
