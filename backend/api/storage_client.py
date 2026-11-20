@@ -38,7 +38,8 @@ def upload(auth_header: str, relative_path: str, fileobj, filename: str, content
             data=data, files=files, timeout=_TIMEOUT,
         )
     except requests.RequestException as exc:
-        raise StorageClientError(f'storage injoignable : {exc}') from exc
+        # Message fixe : le texte d'une exception `requests` porte l'URL interne demandée.
+        raise StorageClientError(f'storage injoignable ({type(exc).__name__}).') from exc
     if resp.status_code != 201:
         raise StorageClientError(f'Upload storage échoué (HTTP {resp.status_code}) : {resp.text[:200]}')
     return resp.json()
@@ -53,7 +54,8 @@ def download_to_tempfile(auth_header: str, relative_path: str) -> tempfile._Temp
     try:
         resp = requests.get(url, headers={'Authorization': auth_header}, stream=True, timeout=_TIMEOUT)
     except requests.RequestException as exc:
-        raise StorageClientError(f'storage injoignable : {exc}') from exc
+        # Message fixe : le texte d'une exception `requests` porte l'URL interne demandée.
+        raise StorageClientError(f'storage injoignable ({type(exc).__name__}).') from exc
     if resp.status_code != 200:
         raise StorageClientError(f'Téléchargement storage échoué (HTTP {resp.status_code}).')
 
@@ -70,6 +72,7 @@ def delete(auth_header: str, relative_path: str) -> None:
     try:
         resp = requests.delete(url, headers={'Authorization': auth_header}, timeout=_TIMEOUT)
     except requests.RequestException as exc:
-        raise StorageClientError(f'storage injoignable : {exc}') from exc
+        # Message fixe : le texte d'une exception `requests` porte l'URL interne demandée.
+        raise StorageClientError(f'storage injoignable ({type(exc).__name__}).') from exc
     if resp.status_code not in (204, 404):
         raise StorageClientError(f'Suppression storage échouée (HTTP {resp.status_code}).')

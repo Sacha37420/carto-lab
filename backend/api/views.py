@@ -345,13 +345,14 @@ class RecipesView(APIView):
     """
 
     def get(self, request):
-        return Response(RecipeSerializer(Recipe.objects.all(), many=True).data)
+        return Response(RecipeSerializer(Recipe.objects.all(), many=True, context={'request': request}).data)
 
     def post(self, request):
         ser = RecipeSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
         recipe = ser.save(owner_email=getattr(request.user, 'email', ''))
-        return Response(RecipeSerializer(recipe).data, status=status.HTTP_201_CREATED)
+        return Response(RecipeSerializer(recipe, context={'request': request}).data,
+                        status=status.HTTP_201_CREATED)
 
 
 class RecipeDetailView(APIView):
@@ -359,7 +360,7 @@ class RecipeDetailView(APIView):
 
     def get(self, request, pk):
         try:
-            return Response(RecipeSerializer(Recipe.objects.get(pk=pk)).data)
+            return Response(RecipeSerializer(Recipe.objects.get(pk=pk), context={'request': request}).data)
         except Recipe.DoesNotExist:
             return Response(status=status.HTTP_404_NOT_FOUND)
 
